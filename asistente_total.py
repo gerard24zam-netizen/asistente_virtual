@@ -9,11 +9,28 @@ tz_morelia = timezone(timedelta(hours=-6))
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
 def obtener_servicio_google():
-    """Autentica al usuario."""
-    # Nota: En la nube, usarás variables de entorno para cargar las credenciales
-    creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+    """Autentica al usuario usando la variable de entorno."""
+    # Obtenemos el JSON completo desde la variable de entorno de Render
+    token_json_str = os.getenv("GOOGLE_TOKEN_JSON")
+    
+    # Convertimos el string JSON a un diccionario de Python
+    token_dict = json.loads(token_json_str)
+    
+    # Creamos las credenciales desde el diccionario directamente
+    creds = Credentials.from_authorized_user_info(token_dict, SCOPES)
+    
+    # Construimos y devolvemos el servicio
     return build('calendar', 'v3', credentials=creds)
-
+    
+    # Convertimos el string JSON a un diccionario de Python
+    token_dict = json.loads(token_json_str)
+    
+    # Creamos las credenciales desde el diccionario directamente
+    creds = Credentials.from_authorized_user_info(token_dict, SCOPES)
+    
+    # Construimos y devolvemos el servicio
+    return build('calendar', 'v3', credentials=creds)
+    
 def marcar_confirmado(telefono_recibido, service, respuesta_texto):
     """Función maestra para actualizar el calendario."""
     ahora = datetime.now(tz_morelia)
