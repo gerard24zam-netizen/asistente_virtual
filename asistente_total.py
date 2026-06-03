@@ -9,9 +9,13 @@ tz_morelia = timezone(timedelta(hours=-6))
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
 def obtener_servicio_google():
+    # Línea 1: Obtener la variable de entorno
     token_json_str = os.getenv("GOOGLE_TOKEN_JSON")
+    # Línea 2: Cargar el JSON
     token_dict = json.loads(token_json_str)
+    # Línea 3: Crear credenciales
     creds = Credentials.from_authorized_user_info(token_dict, SCOPES)
+    # Línea 4: Construir servicio
     return build('calendar', 'v3', credentials=creds)
     
 def marcar_confirmado(telefono_recibido, service, respuesta_texto):
