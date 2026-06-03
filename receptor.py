@@ -20,15 +20,17 @@ def recibir_mensaje():
     datos = request.json
     try:
         # Extraemos info de forma más segura
+       if 'entry' in datos and 'changes' in datos['entry'][0]:
         value = datos['entry'][0]['changes'][0]['value']
-        if 'messages' not in value:
+            
+          if 'messages' in value:
             return jsonify({"status": "ok"}), 200
         
         message = value['messages'][0]
         telefono_paciente = message['from']
         
         # Detectamos si es un botón
-        if message['type'] == 'button':
+             if message['type'] == 'button':
             button_text = message['button']['text']
             print(f"Paciente {telefono_paciente} presionó: {button_text}")
             
