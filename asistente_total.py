@@ -22,15 +22,6 @@ def obtener_servicio_google():
     # Construimos y devolvemos el servicio
     return build('calendar', 'v3', credentials=creds)
     
-    # Convertimos el string JSON a un diccionario de Python
-    token_dict = json.loads(token_json_str)
-    
-    # Creamos las credenciales desde el diccionario directamente
-    creds = Credentials.from_authorized_user_info(token_dict, SCOPES)
-    
-    # Construimos y devolvemos el servicio
-    return build('calendar', 'v3', credentials=creds)
-    
 def marcar_confirmado(telefono_recibido, service, respuesta_texto):
     """Función maestra para actualizar el calendario."""
     ahora = datetime.now(tz_morelia)
