@@ -5,7 +5,7 @@ import os
 app = Flask(__name__)
 
 # En lugar de hardcodear el token, usaremos una variable de entorno
-TOKEN_VERIFICACION = os.getenv("mi_token_secreto_Gera")
+TOKEN_VERIFICACION = os.getenv("VERIFY_TOKEN")
 
 @app.route('/webhook', methods=['GET'])
 def verificar_webhook():
