@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 import asistente_total
 import os
+import requests
 
 app = Flask(__name__)
 
@@ -9,10 +10,25 @@ def enviar_recordatorio():
     datos = request.json
     telefono = datos.get('telefono')
     mensaje = datos.get('mensaje')
-    # Aquí iría tu lógica de enviar mensaje vía API de WhatsApp (Meta)
-    print(f"Lanzador activado: Enviando a {telefono}")
-    return jsonify({"status": "lanzado"}), 200
     
+    TOKEN = os.getenv("META_TOKEN") 
+    NUMERO_ID = os.getenv("META_PHONE_ID")
+    
+    url_meta = f"https://graph.facebook.com/v21.0/{NUMERO_ID}/messages"
+    headers = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": telefono,
+        "type": "text",
+        "text": {"body": mensaje}
+    }
+    
+    try:
+        respuesta = requests.post(url_meta, json=payload, headers=headers)
+        return jsonify({"status": "lanzado", "meta_response": respuesta.json()}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "detalle": str(e)}), 500
+        
 @app.route('/webhook', methods=['POST'])
 def recibir_mensaje():
     datos = request.json
