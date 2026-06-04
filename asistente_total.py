@@ -18,8 +18,12 @@ def obtener_servicio_google():
     # Línea 4: Construir servicio
     return build('calendar', 'v3', credentials=creds)
     
+def limpiar_telefono(tel):
+    # Esto elimina cualquier carácter que no sea número
+    return "".join(filter(str.isdigit, str(tel)))
+
 def marcar_confirmado(telefono_recibido, service, respuesta_texto):
-    """Función maestra para actualizar el calendario."""
+    tel_limpio = limpiar_telefono(telefono_recibido)
     ahora = datetime.now(tz_morelia)
     manana = (ahora + timedelta(days=1)).date()
     
