@@ -4,6 +4,15 @@ import os
 
 app = Flask(__name__)
 
+@app.route('/enviar-recordatorio', methods=['POST'])
+def enviar_recordatorio():
+    datos = request.json
+    telefono = datos.get('telefono')
+    mensaje = datos.get('mensaje')
+    # Aquí iría tu lógica de enviar mensaje vía API de WhatsApp (Meta)
+    print(f"Lanzador activado: Enviando a {telefono}")
+    return jsonify({"status": "lanzado"}), 200
+    
 @app.route('/webhook', methods=['POST'])
 def recibir_mensaje():
     datos = request.json
