@@ -15,18 +15,19 @@ def enviar_recordatorio():
         "messaging_product": "whatsapp",
         "to": telefono,
         "type": "template",
-        "template": {
-            "name": "confirmacion_cita", # DEBE COINCIDIR EXACTAMENTE CON EL NOMBRE EN META
-            "language": {"code": "es_MX"},
-            "components": [
-                {
-                    "type": "body",
-                    "parameters": [
-                        {"type": "text", "text": "Paciente"} # Puedes poner el nombre si lo extraes
-                    ]
-                }
-            ]
-        }
+       "template": {
+        "name": "confirmacion_cita", # Asegúrate de que este sea el nombre técnico en Meta
+        "language": {"code": "es_MX"},
+        "components": [
+            {
+                "type": "body",
+                "parameters": [
+                    {"type": "text", "text": "Gerardo Zamora"}, # Esto llena {{1}}
+                    {"type": "text", "text": "mañana"},       # Esto llena {{2}}
+                    {"type": "text", "text": "10:00 am"}      # Esto llena {{3}}
+                ]
+            }
+        ]
     }
     
     headers = {
