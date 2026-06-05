@@ -1,33 +1,37 @@
-from flask import Flask, request, jsonify
-import asistente_total
 import os
 import requests
+from flask import Flask, request, jsonify
+import asistente_total # Asegúrate de que este sea tu archivo donde tienes la lógica de Google Calendar
 
 app = Flask(__name__)
 
+# --- PARTE 1: ENVÍO DE RECORDATORIOS (Lo que ya tenías) ---
 @app.route('/enviar-recordatorio', methods=['POST'])
 def enviar_recordatorio():
     datos = request.json
     telefono = datos.get('telefono')
+    nombre = datos.get('nombre', 'Paciente')
+    fecha = datos.get('fecha', 'mañana')
+    hora = datos.get('hora', '10:00 am')
     
-    # NUEVA ESTRUCTURA PARA PLANTILLA
     payload = {
         "messaging_product": "whatsapp",
         "to": telefono,
         "type": "template",
-       "template": {
-        "name": "confirmacion_cita", # Asegúrate de que este sea el nombre técnico en Meta
-        "language": {"code": "es_MX"},
-        "components": [
-            {
-                "type": "body",
-                "parameters": [
-                    {"type": "text", "text": "Gerardo Zamora"}, # Esto llena {{1}}
-                    {"type": "text", "text": "mañana"},       # Esto llena {{2}}
-                    {"type": "text", "text": "10:00 am"}      # Esto llena {{3}}
-                ]
-            }
-        ]
+        "template": {
+            "name": "confirmacion_cita",
+            "language": {"code": "es_MX"},
+            "components": [
+                {
+                    "type": "body",
+                    "parameters": [
+                        {"type": "text", "text": nombre},
+                        {"type": "text", "text": fecha},
+                        {"type": "text", "text": hora}
+                    ]
+                }
+            ]
+        }
     }
     
     headers = {
@@ -41,30 +45,40 @@ def enviar_recordatorio():
         headers=headers
     )
     return response.json(), response.status_code
-        
-@app.route('/webhook', methods=['POST'])
+
+# --- PARTE 2: RECEPCIÓN DE RESPUESTAS (Webhook) ---
+@app.route('/webhook', methods=['GET', 'POST'])
 def recibir_mensaje():
-    datos = request.json
-    try:
-        # Nivel 1 dentro de 'try' (4 espacios)
-        if 'entry' in datos and 'changes' in datos['entry'][0]:
-            # Nivel 2 (8 espacios)
-            value = datos['entry'][0]['changes'][0]['value']
+    if request.method == 'GET':
+        # Verificación con Meta
+        verify_token = request.args.get("hub.verify_token")
+        if verify_token == os.getenv("VERIFY_TOKEN"):
+            return request.args.get("hub.challenge")
+        return "Token inválido", 403
+
+    if request.method == 'POST':
+        datos = request.json
+        try:
+            # Extraer respuesta del paciente
+            entry = datos['entry'][0]
+            change = entry['changes'][0]
+            value = change['value']
+            
             if 'messages' in value:
-                # Nivel 3 (12 espacios)
-                message = value['messages'][0]
-                telefono_paciente = message['from']
-                
-                # Nivel 3 (12 espacios)
-                if message.get('type') == 'button':
-                    # Nivel 4 (16 espacios)
-                    button_text = message['button']['text']
-                    print(f"Paciente {telefono_paciente} presionó: {button_text}")
+                msg = value['messages'][0]
+                if msg.get('type') == 'interactive':
+                    telefono_paciente = msg['from']
+                    # Texto del botón presionado
+                    button_text = msg['interactive']['button_reply']['title']
+                    
+                    # Llamada a tu lógica de Google Calendar
                     service = asistente_total.obtener_servicio_google()
                     asistente_total.marcar_confirmado(telefono_paciente, service, button_text)
                     
-        return jsonify({"status": "ok"}), 200
-    except Exception as e:
-        # Nivel 1 dentro de 'except' (4 espacios)
-        print(f"Error procesando mensaje: {e}")
-        return jsonify({"status": "error"}), 200
+            return jsonify({"status": "ok"}), 200
+        except Exception as e:
+            print(f"Error procesando: {e}")
+            return jsonify({"status": "error"}), 200
+
+if __name__ == '__main__':
+    app.run(port=10000)
