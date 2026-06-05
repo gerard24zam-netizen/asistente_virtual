@@ -22,24 +22,26 @@ def limpiar_telefono(tel):
     # Esto elimina cualquier carácter que no sea número
     return "".join(filter(str.isdigit, str(tel)))
 
-def marcar_confirmado(telefono_recibido, service, respuesta_texto):
-    tel_limpio = limpiar_telefono(telefono_recibido)
-    ahora = datetime.now(tz_morelia)
-    manana = (ahora + timedelta(days=1)).date()
-    
-    inicio_manana = datetime(manana.year, manana.month, manana.day, 0, 0, 0, tzinfo=tz_morelia).isoformat()
-    fin_manana = datetime(manana.year, manana.month, manana.day, 23, 59, 59, tzinfo=tz_morelia).isoformat()
-    
-    eventos_result = service.events().list(
-        calendarId='primary',
-        timeMin=inicio_manana,
-        timeMax=fin_manana,
-        singleEvents=True,
-        orderBy='startTime'
-    ).execute()
-    
-    eventos = eventos_result.get('items', [])
-    tel_buscado = telefono_recibido.replace(" ", "").replace("-", "").replace("+", "")
+for event in eventos.get('items', []):
+        titulo_actual = event.get('summary', '')
+        
+        # Verificamos si el teléfono está en el título (como ya lo haces)
+        if tel_buscado in titulo_actual.replace(" ", "").replace("-", "").replace(":", ""):
+            
+            # --- AQUÍ ESTÁ EL CAMBIO: APLICAR EL CAMBIO Y GUARDAR ---
+            if emoji:
+                # Evitamos duplicar el emoji si ya existe
+                if emoji not in titulo_actual:
+                    event['summary'] = f"{emoji} {titulo_actual}"
+                    
+                    # ¡ESTA ES LA LÍNEA QUE FALTA!
+                    service.events().update(
+                        calendarId='primary', 
+                        eventId=event['id'], 
+                        body=event
+                    ).execute()
+                    
+                    print(f"Evento actualizado: {event['summary']}")
     
     # Lógica de estados
     texto_limpio = respuesta_texto.strip().lower()
