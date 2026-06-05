@@ -9,27 +9,37 @@ app = Flask(__name__)
 def enviar_recordatorio():
     datos = request.json
     telefono = datos.get('telefono')
-    mensaje = datos.get('mensaje')
     
-    TOKEN = os.getenv("META_TOKEN") 
-    NUMERO_ID = os.getenv("META_PHONE_ID")
-    
-    url_meta = f"https://graph.facebook.com/v21.0/{NUMERO_ID}/messages"
-    headers = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}
+    # NUEVA ESTRUCTURA PARA PLANTILLA
     payload = {
         "messaging_product": "whatsapp",
         "to": telefono,
-        "type": "text",
-        "text": {
-        "body": mensaje
+        "type": "template",
+        "template": {
+            "name": "confirmacion_cita", # DEBE COINCIDIR EXACTAMENTE CON EL NOMBRE EN META
+            "language": {"code": "es_MX"},
+            "components": [
+                {
+                    "type": "body",
+                    "parameters": [
+                        {"type": "text", "text": "Paciente"} # Puedes poner el nombre si lo extraes
+                    ]
+                }
+            ]
         }
     }
     
-    try:
-        respuesta = requests.post(url_meta, json=payload, headers=headers)
-        return jsonify({"status": "lanzado", "meta_response": respuesta.json()}), 200
-    except Exception as e:
-        return jsonify({"status": "error", "detalle": str(e)}), 500
+    headers = {
+        "Authorization": f"Bearer {os.getenv('META_TOKEN')}",
+        "Content-Type": "application/json"
+    }
+    
+    response = requests.post(
+        f"https://graph.facebook.com/v21.0/{os.getenv('META_PHONE_ID')}/messages",
+        json=payload,
+        headers=headers
+    )
+    return response.json(), response.status_code
         
 @app.route('/webhook', methods=['POST'])
 def recibir_mensaje():
