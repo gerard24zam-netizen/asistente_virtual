@@ -22,26 +22,27 @@ def limpiar_telefono(tel):
     # Esto elimina cualquier carácter que no sea número
     return "".join(filter(str.isdigit, str(tel)))
 
-for event in eventos.get('items', []):
+    eventos = eventos_result.get('items', [])
+    tel_buscado = limpiar_telefono(telefono_recibido) # Usamos tu función de limpieza
+
+    for event in eventos:
         titulo_actual = event.get('summary', '')
+        # Limpiamos el título del evento para comparar solo números
+        titulo_limpio = limpiar_telefono(titulo_actual)
         
-        # Verificamos si el teléfono está en el título (como ya lo haces)
-        if tel_buscado in titulo_actual.replace(" ", "").replace("-", "").replace(":", ""):
-            
-            # --- AQUÍ ESTÁ EL CAMBIO: APLICAR EL CAMBIO Y GUARDAR ---
+        if tel_buscado in titulo_limpio:
+            # Aquí entra solo si encontró el teléfono del paciente en un evento
             if emoji:
-                # Evitamos duplicar el emoji si ya existe
                 if emoji not in titulo_actual:
                     event['summary'] = f"{emoji} {titulo_actual}"
-                    
-                    # ¡ESTA ES LA LÍNEA QUE FALTA!
+                    # Guardamos el cambio
                     service.events().update(
                         calendarId='primary', 
                         eventId=event['id'], 
                         body=event
                     ).execute()
-                    
-                    print(f"Evento actualizado: {event['summary']}")
+                    print(f"ÉXITO: Actualizado {event['summary']}")
+                    return # Terminamos tras encontrar y actualizar
     
     # Lógica de estados
     texto_limpio = respuesta_texto.strip().lower()
