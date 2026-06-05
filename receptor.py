@@ -56,29 +56,27 @@ def recibir_mensaje():
             return request.args.get("hub.challenge")
         return "Token inválido", 403
 
-    if request.method == 'POST':
+if request.method == 'POST':
         datos = request.json
+        # Meta envía los datos en esta ruta
         try:
-            # Extraer respuesta del paciente
-            entry = datos['entry'][0]
-            change = entry['changes'][0]
-            value = change['value']
-            
+            value = datos['entry'][0]['changes'][0]['value']
             if 'messages' in value:
                 msg = value['messages'][0]
+                
+                # Para botones, el tipo es 'interactive'
                 if msg.get('type') == 'interactive':
                     telefono_paciente = msg['from']
-                    # Texto del botón presionado
+                    # RUTA CORRECTA PARA BOTONES
                     button_text = msg['interactive']['button_reply']['title']
                     
-                    # Llamada a tu lógica de Google Calendar
+                    print(f"Botón presionado: {button_text} por {telefono_paciente}")
+                    
+                    # Llamar a tu lógica
                     service = asistente_total.obtener_servicio_google()
                     asistente_total.marcar_confirmado(telefono_paciente, service, button_text)
                     
             return jsonify({"status": "ok"}), 200
         except Exception as e:
-            print(f"Error procesando: {e}")
+            print(f"Error detectado: {e}")
             return jsonify({"status": "error"}), 200
-
-if __name__ == '__main__':
-    app.run(port=10000)
