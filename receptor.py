@@ -20,7 +20,9 @@ def enviar_recordatorio():
         "messaging_product": "whatsapp",
         "to": telefono,
         "type": "text",
-        "text": {"body": mensaje}
+        "text": {
+        "body": mensaje
+        }
     }
     
     try:
