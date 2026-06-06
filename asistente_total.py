@@ -12,6 +12,11 @@ def limpiar_telefono(tel):
     # Extrae solo los números para evitar errores por espacios o guiones
     return "".join(filter(str.isdigit, str(tel)))
 
+def listar_calendarios(service):
+    calendarios = service.calendarList().list().execute()
+    for cal in calendarios.get('items', []):
+        print(f"CALENDARIO ENCONTRADO: {cal['summary']} | ID: {cal['id']}")
+
 # --- MOTOR PRINCIPAL DE ACTUALIZACIÓN ---
 def marcar_confirmado(telefono_recibido, service, respuesta_texto):
     
