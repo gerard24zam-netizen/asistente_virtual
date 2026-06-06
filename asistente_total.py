@@ -1,52 +1,74 @@
 import datetime
 from googleapiclient.discovery import build
 
+# --- CREDENCIALES DE GOOGLE ---
+# (Mantén tu código actual aquí, no lo borres. Solo asegúrate de que retorne el 'service')
 def obtener_servicio_google():
-    # ... (tu código de credenciales actual, no lo cambies) ...
-    return build('calendar', 'v3', credentials=creds)
+    # ... tu código de token_dict, scopes, creds ...
+    pass # Quita este 'pass' y asegúrate de que termine con: return build('calendar', 'v3', credentials=creds)
 
+# --- FUNCIONES AUXILIARES ---
 def limpiar_telefono(tel):
+    # Extrae solo los números para evitar errores por espacios o guiones
     return "".join(filter(str.isdigit, str(tel)))
 
+# --- MOTOR PRINCIPAL DE ACTUALIZACIÓN ---
 def marcar_confirmado(telefono_recibido, service, respuesta_texto):
-    # 1. IDENTIFICAR EMOJI (Lógica de estados)
+    
+    # 1. IDENTIFICAR LA RESPUESTA (Compatible con los botones de Meta)
     texto_limpio = respuesta_texto.strip().lower()
     emoji = None
-    if "si, confirmo" in texto_limpio or "confirm" in texto_limpio:
+    
+    # Usamos palabras clave para ignorar el acento de "Sí" y el punto final "."
+    if "confirm" in texto_limpio:
         emoji = "✅"
-    elif "no, reagendar" in texto_limpio or "reagendar" in texto_limpio:
+    elif "reagendar" in texto_limpio:
         emoji = "❌"
     
     if not emoji:
-        print("Respuesta no reconocida")
+        print(f"Respuesta ignorada (no es confirmación ni reagenda): {respuesta_texto}")
         return
 
-    # 2. BUSCAR EVENTO Y ACTUALIZAR
+    # 2. BUSCAR LA CITA EN EL CALENDARIO
     tel_buscado = limpiar_telefono(telefono_recibido)
-    now = datetime.datetime.utcnow().isoformat() + 'Z'
-    eventos_result = service.events().list(calendarId='primary', timeMin=now).execute()
+    
+    # IMPORTANTE PARA LA APP: Buscamos desde las 00:00 hrs de hoy. 
+    # Así, si confirman tarde, el sistema sigue encontrando la cita de la mañana.
+    hoy_inicio = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + 'Z'
+    
+    # NOTA FUTURA PARA MULTI-DOCTOR: 'primary' cambiará dinámicamente al ID del doctor
+    eventos_result = service.events().list(
+        calendarId='primary', 
+        timeMin=hoy_inicio, 
+        singleEvents=True,
+        orderBy='startTime'
+    ).execute()
+    
     eventos = eventos_result.get('items', [])
 
+    # 3. PROCESAR Y ACTUALIZAR
     for event in eventos:
         titulo_actual = event.get('summary', '')
         titulo_limpio = limpiar_telefono(titulo_actual)
         
-        if tel_buscado in titulo_limpio:
-            # Quitamos emojis previos si existen para limpiar
-            titulo_base = titulo_actual.replace("✅ ", "").replace("❌ ", "").strip()
-            # Aplicamos nuevo emoji
-            nuevo_titulo = f"{emoji} {titulo_base}"
+        # Si el teléfono del paciente está dentro del título del evento
+        if tel_buscado in titulo_limpio and tel_buscado != "":
             
+            # Limpiamos el título quitando emojis anteriores por si el paciente cambia de opinión
+            titulo_base = titulo_actual.replace("✅", "").replace("❌", "").strip()
+            
+            # Construimos el nuevo título con el estado actualizado
+            nuevo_titulo = f"{emoji} {titulo_base}"
             event['summary'] = nuevo_titulo
             
-            # GUARDAR EN GOOGLE
+            # Ejecutamos el guardado en Google Calendar
             service.events().update(
                 calendarId='primary', 
                 eventId=event['id'], 
                 body=event
             ).execute()
             
-            print(f"ÉXITO: Se actualizó a {nuevo_titulo}")
-            return # Salimos después de actualizar
+            print(f"ÉXITO: Cita actualizada a -> {nuevo_titulo}")
+            return # Terminamos el proceso tras la primera coincidencia exitosa
             
-    print("No se encontró cita para este teléfono")
+    print(f"Alerta: No se encontró ninguna cita hoy para el teléfono {tel_buscado}")
