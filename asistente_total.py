@@ -69,6 +69,7 @@ def marcar_confirmado(telefono_recibido, service, respuesta_texto):
             ).execute()
             
             print(f"ÉXITO: Cita actualizada a -> {nuevo_titulo}")
+            print(f"LINK EXACTO DEL EVENTO: {event.get('htmlLink')}")
             return # Terminamos el proceso tras la primera coincidencia exitosa
             
     print(f"Alerta: No se encontró ninguna cita hoy para el teléfono {tel_buscado}")
