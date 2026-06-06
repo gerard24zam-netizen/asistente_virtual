@@ -56,7 +56,7 @@ def recibir_mensaje():
             return request.args.get("hub.challenge")
         return "Token inválido", 403
 
-if request.method == 'POST':
+    if request.method == 'POST':
         datos = request.json
         # Meta envía los datos en esta ruta
         try:
