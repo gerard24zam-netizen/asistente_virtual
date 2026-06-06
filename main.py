@@ -4,7 +4,7 @@ import asistente_total # Asumo que aquí tienes tu lógica de Google
 
 app = Flask(__name__)
 
-@app.route('/', methods=['GET', 'POST'])
+@app.route('/webhook', methods=['GET', 'POST']) # Cambié '/' por '/webhook'
 def webhook():
     # 1. Si es GET, es una prueba de conexión (Salud del servidor)
     if request.method == 'GET':
