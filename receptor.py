@@ -53,7 +53,7 @@ def recibir_mensaje():
         # Verificación con Meta
         verify_token = request.args.get("hub.verify_token")
         if verify_token == os.getenv("VERIFY_TOKEN"):
-            return request.args.get("hub.challenge")
+        return request.args.get("hub.challenge")
         return "Token inválido", 403
 
     if request.method == 'POST':
