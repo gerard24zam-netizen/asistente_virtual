@@ -1,82 +1,32 @@
-import os
-import requests
-from flask import Flask, request, jsonify
-import asistente_total # Asegúrate de que este sea tu archivo donde tienes la lógica de Google Calendar
+from flask import Flask, request
+import asistente_total # Asumo que aquí tienes tu lógica de Google
 
 app = Flask(__name__)
 
-# --- PARTE 1: ENVÍO DE RECORDATORIOS (Lo que ya tenías) ---
-@app.route('/enviar-recordatorio', methods=['POST'])
-def enviar_recordatorio():
-    datos = request.json
-    telefono = datos.get('telefono')
-    nombre = datos.get('nombre', 'Paciente')
-    fecha = datos.get('fecha', 'mañana')
-    hora = datos.get('hora', '10:00 am')
-    
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": telefono,
-        "type": "template",
-        "template": {
-            "name": "confirmacion_cita",
-            "language": {"code": "es_MX"},
-            "components": [
-                {
-                    "type": "body",
-                    "parameters": [
-                        {"type": "text", "text": nombre},
-                        {"type": "text", "text": fecha},
-                        {"type": "text", "text": hora}
-                    ]
-                }
-            ]
-        }
-    }
-    
-    headers = {
-        "Authorization": f"Bearer {os.getenv('META_TOKEN')}",
-        "Content-Type": "application/json"
-    }
-    
-    response = requests.post(
-        f"https://graph.facebook.com/v21.0/{os.getenv('META_PHONE_ID')}/messages",
-        json=payload,
-        headers=headers
-    )
-        return response.json(), response.status_code
-
-# --- PARTE 2: RECEPCIÓN DE RESPUESTAS (Webhook) ---
-@app.route('/webhook', methods=['GET', 'POST'])
-def recibir_mensaje():
+@app.route('/', methods=['GET', 'POST'])
+def webhook():
+    # 1. Si es GET, es una prueba de conexión (Salud del servidor)
     if request.method == 'GET':
-        # Verificación con Meta
-        verify_token = request.args.get("hub.verify_token")
-        if verify_token == os.getenv("VERIFY_TOKEN"):
-        return request.args.get("hub.challenge")
-        return "Token inválido", 403
+        return 'Servidor Activo', 200
 
+    # 2. Si es POST, es un mensaje de WhatsApp
     if request.method == 'POST':
-        datos = request.json
-        # Meta envía los datos en esta ruta
+        data = request.get_json()
+        
+        # Aquí extraemos los datos básicos (ajusta según la estructura de tu JSON)
         try:
-            value = datos['entry'][0]['changes'][0]['value']
-            if 'messages' in value:
-                msg = value['messages'][0]
-                
-                # Para botones, el tipo es 'interactive'
-                if msg.get('type') == 'interactive':
-                    telefono_paciente = msg['from']
-                    # RUTA CORRECTA PARA BOTONES
-                    button_text = msg['interactive']['button_reply']['title']
-                    
-                    print(f"Botón presionado: {button_text} por {telefono_paciente}")
-                    
-                    # Llamar a tu lógica
-                    service = asistente_total.obtener_servicio_google()
-                    asistente_total.marcar_confirmado(telefono_paciente, service, button_text)
-                    
-            return jsonify({"status": "ok"}), 200
+            # Ejemplo: capturar teléfono y texto del botón/mensaje
+            telefono = data['entry'][0]['changes'][0]['value']['messages'][0]['from']
+            texto = data['entry'][0]['changes'][0]['value']['messages'][0]['text']['body']
+            
+            # Llamamos a tu lógica de Google que ya tenías
+            service = asistente_total.obtener_servicio_google()
+            asistente_total.marcar_confirmado(telefono, service, texto)
+            
+            return 'Procesado', 200
         except Exception as e:
-            print(f"Error detectado: {e}")
-            return jsonify({"status": "error"}), 200
+            print(f"Error procesando el mensaje: {e}")
+            return 'Error', 500
+
+if __name__ == '__main__':
+    app.run(port=5000)
