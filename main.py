@@ -18,17 +18,36 @@ def enviar_mensaje_wa(telefono_destino, mensaje_texto):
         "Authorization": f"Bearer {WHATSAPP_TOKEN}",
         "Content-Type": "application/json"
     }
-    
-   # CONFIGURACIÓN CORREGIDA CON TU PLANTILLA REAL
+
+  # CONFIGURACIÓN PARA PLANTILLA CON MÚLTIPLES VARIABLES
     data = {
         "messaging_product": "whatsapp",
         "to": telefono_destino,
         "type": "template",
         "template": {
-            "name": "confirmacion_de_cita",  # <-- Nombre real de tu panel de Meta
+            "name": "confirmacion_de_cita",
             "language": {
-                "code": "es_MX"  # <-- Código correcto para Español (México)
-            }
+                "code": "es_MX"
+            },
+            "components": [
+                {
+                    "type": "body",
+                    "parameters": [
+                        {
+                            "type": "text",
+                            "text": "Paciente"  # Esto llenará la variable {{1}}
+                        },
+                        {
+                            "type": "text",
+                            "text": "hoy"       # Esto llenará la variable {{2}}
+                        },
+                        {
+                            "type": "text",
+                            "text": "la hora acordada" # Esto llenará la variable {{3}}
+                        }
+                    ]
+                }
+            ]
         }
     }
 # ==========================================
