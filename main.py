@@ -8,7 +8,7 @@ app = Flask(__name__)
 # CONFIGURACIÓN DE TU SAAS (LLENA TUS DATOS)
 # ==========================================
 VERIFY_TOKEN = "mi_token_secreto_Gera"
-WHATSAPP_TOKEN = "EAAXdEhil3gMBRjKZCho9kNZBWc1IgIY0fH0FliaG2FkPj8kWIdAYthZCbkVecL0VDUYk14LBMYWbTobDTg3fC99zZAP170M5ImxwpCgFxmcDSlQNDTHnYEZCYoQsgsNVmXSOFMVzcfqny2lfCQgpa4S9EFZBvhwKmq1lzC2WrxEwxvYm9uZAMOGVJaaJ8tUEjHkUwZDZD" # Reemplaza esto
+WHATSAPP_TOKEN = "EAAXdEhil3gMBRtHKscQaEsSju4zarI7n03Sx3ZA3l6GucdeNZAWe3HAcEQIRPV5QuA5FZBKq9VrEV3cwId2F0xdeZAc5b6xgjT5VCj7T4ZBTfZBaIggPHBLa4BjZCbijc1rfZCDbTX9eZC9mTZAmwiVC4ySSCcuXZAyKLAu0UTnponRQ3cIt0kjWcShqa6uMGosDS3fzgZDZD" # Reemplaza esto
 TELEFONO_ID = "1120833397777315" # Reemplaza esto
 
 def enviar_mensaje_wa(telefono_destino, mensaje_texto):
