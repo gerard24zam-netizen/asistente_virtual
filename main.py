@@ -12,35 +12,52 @@ WHATSAPP_TOKEN = "EAAXdEhil3gMBRtHKscQaEsSju4zarI7n03Sx3ZA3l6GucdeNZAWe3HAcEQIRP
 TELEFONO_ID = "1120833397777315" # Reemplaza esto
 
 def enviar_mensaje_wa(telefono_destino, mensaje_texto):
-    """Función para enviar mensajes por WhatsApp"""
+    """Función para enviar mensajes usando tu plantilla personalizada de WhatsApp"""
     url = f"https://graph.facebook.com/v17.0/{TELEFONO_ID}/messages"
     headers = {
         "Authorization": f"Bearer {WHATSAPP_TOKEN}",
         "Content-Type": "application/json"
     }
+    
+    # NUEVA ESTRUCTURA PARA TU PLANTILLA PERSONALIZADA
     data = {
         "messaging_product": "whatsapp",
         "to": telefono_destino,
-        "type": "text",
-        "text": {"body": mensaje_texto}
+        "type": "template",
+        "template": {
+            "name": "REEMPLAZA_CON_EL_NOMBRE_EXACTO_DE_TU_PLANTILLA", # Ej: recordatorio_citas
+            "language": {
+                "code": "es" # Idioma español
+            },
+            # Si tu plantilla tiene variables {{1}}, {{2}}, las llenamos aquí:
+            "components": [
+                {
+                    "type": "body",
+                    "parameters": [
+                        {
+                            "type": "text",
+                            "text": mensaje_texto # Aquí mandamos el texto completo o la variable 1
+                        }
+                        # Si tienes más variables, descomenta las líneas de abajo:
+                        # ,{"type": "text", "text": "Variable 2"},
+                        # {"type": "text", "text": "Variable 3"}
+                    ]
+                }
+            ]
+        }
     }
+    
     try:
-        # 1. Aseguramos el uso de 'data'
         response = requests.post(url, headers=headers, json=data)
-        
-        # 2. Logs para ver en Render qué dice Facebook
         print(f"Código de respuesta de Meta: {response.status_code}")
         print(f"Cuerpo de respuesta de Meta: {response.text}")
         
-        # 3. INDENTACIÓN CORRECTA (los print van un paso más a la derecha)
         if response.status_code == 200:
             print(f"Recordatorio enviado con éxito a {telefono_destino}")
         else:
             print(f"Meta rechazó el mensaje. Código: {response.status_code}")
-        
-        # 4. OBLIGATORIO: Devolvemos la respuesta para la ruta de los recordatorios
+            
         return response
-        
     except Exception as e:
         print(f"Error enviando mensaje WA: {e}")
         return None
