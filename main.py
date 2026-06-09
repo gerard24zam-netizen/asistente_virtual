@@ -83,6 +83,8 @@ def enviar_recordatorio():
         # Recibimos los datos que manda Google Apps Script
         data = request.get_json()
         telefono = data.get('telefono')
+        if telefono and len(str(telefono)) == 10:
+           telefono = f"52{telefono}"
         nombre = data.get('nombre')
         fecha = data.get('fecha')
         hora = data.get('hora')
