@@ -19,49 +19,18 @@ def enviar_mensaje_wa(telefono_destino, mensaje_texto):
         "Content-Type": "application/json"
     }
     
-    # NUEVA ESTRUCTURA PARA TU PLANTILLA PERSONALIZADA
+    # CAMBIAMOS DE 'TEXT' A 'TEMPLATE' PARA ACTIVAR LOS BOTONES
     data = {
         "messaging_product": "whatsapp",
         "to": telefono_destino,
         "type": "template",
         "template": {
-            "name": "REEMPLAZA_CON_EL_NOMBRE_EXACTO_DE_TU_PLANTILLA", # Ej: recordatorio_citas
+            "name": "EL_NOMBRE_DE_TU_PLANTILLA",  # <--- Reemplaza aquí con el nombre en minúsculas que tiene en Meta
             "language": {
-                "code": "es" # Idioma español
-            },
-            # Si tu plantilla tiene variables {{1}}, {{2}}, las llenamos aquí:
-            "components": [
-                {
-                    "type": "body",
-                    "parameters": [
-                        {
-                            "type": "text",
-                            "text": mensaje_texto # Aquí mandamos el texto completo o la variable 1
-                        }
-                        # Si tienes más variables, descomenta las líneas de abajo:
-                        # ,{"type": "text", "text": "Variable 2"},
-                        # {"type": "text", "text": "Variable 3"}
-                    ]
-                }
-            ]
+                "code": "es"  # Idioma español
+            }
         }
     }
-    
-    try:
-        response = requests.post(url, headers=headers, json=data)
-        print(f"Código de respuesta de Meta: {response.status_code}")
-        print(f"Cuerpo de respuesta de Meta: {response.text}")
-        
-        if response.status_code == 200:
-            print(f"Recordatorio enviado con éxito a {telefono_destino}")
-        else:
-            print(f"Meta rechazó el mensaje. Código: {response.status_code}")
-            
-        return response
-    except Exception as e:
-        print(f"Error enviando mensaje WA: {e}")
-        return None
-
 # ==========================================
 # PUERTA 1: RECIBIR RESPUESTAS DEL PACIENTE (WEBHOOK META)
 # ==========================================
