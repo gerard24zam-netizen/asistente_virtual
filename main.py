@@ -25,16 +25,11 @@ def enviar_mensaje_wa(telefono_destino, mensaje_texto):
         "text": {"body": mensaje_texto}
     }
     try:
-        response = requests.post(url, headers=headers, json=payload)
-
-        # ESTO ES LO CLAVE: Vamos a ver qué dice Facebook realmente
-        print(f"Código de respuesta de Meta: {response.status_code}")
-        print(f"Cuerpo de respuesta de Meta: {response.text}")
-
-        if response.status_code == 200:
-        print(f"Recordatorio enviado con éxito a {telefono_destino}")
-        else:
-        print(f"Meta rechazó el mensaje. Código: {response.status_code}")
+        response = requests.post(url, headers=headers, json=data)
+        return response  # <--- CLAVE 1: Retornamos la respuesta completa de Meta
+    except Exception as e:
+        print(f"Error enviando mensaje WA: {e}")
+        return None
 
 # ==========================================
 # PUERTA 1: RECIBIR RESPUESTAS DEL PACIENTE (WEBHOOK META)
