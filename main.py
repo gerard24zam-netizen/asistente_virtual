@@ -48,14 +48,17 @@ def enviar_mensaje_wa(telefono_destino, mensaje_texto):
 # ==========================================
 # PUERTA 1: RECIBIR RESPUESTAS DEL PACIENTE (WEBHOOK META)
 # ==========================================
-@app.route('/webhook', methods=['GET', 'POST'])
-def webhook():
-    if request.method == 'GET':
-        token = request.args.get("hub.verify_token")
-        challenge = request.args.get("hub.challenge")
-        if token == VERIFY_TOKEN:
-            return challenge, 200
-        return "Token incorrecto", 403
+@app.route('/webhook', methods=['POST'])
+def recibir_webhook():
+    data = request.get_json()
+    
+    # ESTO TE MOSTRARÁ EL ERROR REAL EN RENDER:
+    print("--- NOTIFICACIÓN DE META (WEBHOOK) ---")
+    import json
+    print(json.dumps(data, indent=2))
+    
+    # ... aquí sigue el resto de tu código del webhook ...
+    return "EVENT_RECEIVED", 200
 
     if request.method == 'POST':
         data = request.get_json()
