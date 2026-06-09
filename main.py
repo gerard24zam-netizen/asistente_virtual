@@ -25,8 +25,22 @@ def enviar_mensaje_wa(telefono_destino, mensaje_texto):
         "text": {"body": mensaje_texto}
     }
     try:
+        # 1. Aseguramos el uso de 'data'
         response = requests.post(url, headers=headers, json=data)
-        return response  # <--- CLAVE 1: Retornamos la respuesta completa de Meta
+        
+        # 2. Logs para ver en Render qué dice Facebook
+        print(f"Código de respuesta de Meta: {response.status_code}")
+        print(f"Cuerpo de respuesta de Meta: {response.text}")
+        
+        # 3. INDENTACIÓN CORRECTA (los print van un paso más a la derecha)
+        if response.status_code == 200:
+            print(f"Recordatorio enviado con éxito a {telefono_destino}")
+        else:
+            print(f"Meta rechazó el mensaje. Código: {response.status_code}")
+        
+        # 4. OBLIGATORIO: Devolvemos la respuesta para la ruta de los recordatorios
+        return response
+        
     except Exception as e:
         print(f"Error enviando mensaje WA: {e}")
         return None
