@@ -25,7 +25,7 @@ def enviar_mensaje_wa(telefono_destino, mensaje_texto):
         "to": telefono_destino,
         "type": "template",
         "template": {
-            "name": "confirmacion_de_cita",
+            "name": "confirmacion_cita",
             "language": {
                 "code": "es_MX"
             },
