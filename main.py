@@ -25,7 +25,7 @@ def enviar_mensaje_wa(telefono_destino, mensaje_texto):
         "to": telefono_destino,
         "type": "template",
         "template": {
-            "name": "EL_NOMBRE_DE_TU_PLANTILLA",  # <--- Reemplaza aquí con el nombre en minúsculas que tiene en Meta
+            "name": "confirmacion_cita",  # <--- Reemplaza aquí con el nombre en minúsculas que tiene en Meta
             "language": {
                 "code": "es"  # Idioma español
             }
