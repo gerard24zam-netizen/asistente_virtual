@@ -19,15 +19,15 @@ def enviar_mensaje_wa(telefono_destino, mensaje_texto):
         "Content-Type": "application/json"
     }
     
-    # CAMBIAMOS DE 'TEXT' A 'TEMPLATE' PARA ACTIVAR LOS BOTONES
+   # CONFIGURACIÓN CORREGIDA CON TU PLANTILLA REAL
     data = {
         "messaging_product": "whatsapp",
         "to": telefono_destino,
         "type": "template",
         "template": {
-            "name": "confirmacion_cita",  # <--- Reemplaza aquí con el nombre en minúsculas que tiene en Meta
+            "name": "confirmacion_de_cita",  # <-- Nombre real de tu panel de Meta
             "language": {
-                "code": "es"  # Idioma español
+                "code": "es_MX"  # <-- Código correcto para Español (México)
             }
         }
     }
