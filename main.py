@@ -45,7 +45,7 @@ def enviar_plantilla_wa(telefono_destino, nombre_paciente, hora_cita):
         "to": telefono_destino,
         "type": "template",
         "template": {
-            "name": "confirmacion_cita", 
+            "name": "confirmacion_de_cita", 
             "language": { "code": "es_MX" },
             "components": [
                 {
@@ -68,7 +68,7 @@ def enviar_plantilla_wa(telefono_destino, nombre_paciente, hora_cita):
 # ==========================================
 @app.route('/webhook', methods=['GET', 'POST'])
 def recibir_webhook():
-    # A) VERIFICACIÓN DE META (Solo ocurre cuando guardas el webhook en Meta Developers)
+    # A) VERIFICACIÓN DE META
     if request.method == 'GET':
         mode = request.args.get('hub.mode')
         token = request.args.get('hub.verify_token')
@@ -140,10 +140,10 @@ def enviar_recordatorio():
         if not telefono:
             return jsonify({"error": "Falta el telefono"}), 400
             
-        # Forzar formato correcto del número
+        # Forzar formato correcto del número (Limpieza estricta)
         telefono_limpio = "".join(filter(str.isdigit, str(telefono)))
         if len(telefono_limpio) == 10:
-           telefono_limpio = f"52{telefono_limpio}"
+            telefono_limpio = f"52{telefono_limpio}"
         
         print(f"Despachando plantilla de recordatorio para {nombre} a las {hora}")
         enviar_plantilla_wa(telefono_limpio, nombre, hora)
