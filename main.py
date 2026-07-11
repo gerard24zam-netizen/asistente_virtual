@@ -45,7 +45,7 @@ def enviar_plantilla_wa(telefono_destino, nombre_paciente, fecha_cita, hora_cita
         "to": telefono_destino,
         "type": "template",
         "template": {
-            "name": "confirmacion_de_cita", # <-- ⚠️ NOTA: Asegúrate de que este sea el nombre exacto en tu Meta Business Suite
+            "name": "confirmacion_cita", # <-- ⚠️ NOTA: Asegúrate de que este sea el nombre exacto en tu Meta Business Suite
             "language": { "code": "es_MX" },
             "components": [
                 {
