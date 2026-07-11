@@ -88,32 +88,32 @@ def recibir_webhook():
         print("--- NOTIFICACIÓN DE META (WEBHOOK) ---")
         print(json.dumps(data, indent=2))
         
-        try:
-            entry = data.get('entry', [])[0]
-            changes = entry.get('changes', [])[0].get('value', {})
+       try:
+        entry = data.get('entry', [])[0]
+        changes = entry.get('changes', [])[0].get('value', {})
+
+        if 'messages' in changes:
+            mensaje_info = changes['messages'][0]
+            telefono_paciente = mensaje_info['from']
             
-            if 'messages' in changes:
-                mensaje_info = changes['messages'][0]
-                telefono_paciente = mensaje_info['from']
+            texto_recibido = ""
+            if 'text' in mensaje_info:
+                texto_recibido = mensaje_info['text']['body'].lower().strip()
+            elif 'button' in mensaje_info:
+                texto_recibido = mensaje_info['button']['text'].lower().strip()
                 
-               texto_recibido = ""
-                if 'text' in mensaje_info:
-                    texto_recibido = mensaje_info['text']['body'].lower().strip()
-                elif 'button' in mensaje_info:
-                    texto_recibido = mensaje_info['button']['text'].lower().strip()
-
-                print(f"Mensaje procesado de {telefono_paciente}: {texto_recibido}")
-
-                # Evaluar respuesta del paciente
-                if any(x in texto_recibido for x in ["confirm", "sí", "si", "correcto", "ok"]):
-                    enviar_texto_wa(telefono_paciente, "¡Perfecto! Hemos confirmado tu cita. ✅")
-                    try:
-                        service = asistente_total.obtener_servicio_google()
-                        if service:
-                            # Enviamos el texto real recibido para que asistente_total coloque la palomita ✅
-                            asistente_total.marcar_confirmado(telefono_paciente, service, texto_recibido)
-                    except Exception as e:
-                        print(f"Error en Google Calendar: {e}")
+            print(f"Mensaje procesado de {telefono_paciente}: {texto_recibido}")
+            
+            # Evaluar respuesta del paciente
+            if any(x in texto_recibido for x in ["confirm", "si", "sí", "correcto", "ok"]):
+                enviar_texto_wa(telefono_paciente, "¡Perfecto! Hemos confirmado tu cita. ✅")
+                try:
+                    service = asistente_total.obtener_servicio_google()
+                    if service:
+                        # Enviamos el texto real recibido para que coloque la palomita
+                        asistente_total.marcar_confirmado(telefono_paciente, service, texto_recibido)
+                except Exception as e:
+                    print(f"Error en Google Calendar: {e}")
 
                 elif any(x in texto_recibido for x in ["reagendar", "cancel", "no", "no puedo"]):
                     enviar_texto_wa(telefono_paciente, "Entendido, nos pondremos en contacto para reagendar. ❌")
