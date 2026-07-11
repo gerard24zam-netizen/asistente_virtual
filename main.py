@@ -88,7 +88,7 @@ def recibir_webhook():
         print("--- NOTIFICACIÓN DE META (WEBHOOK) ---")
         print(json.dumps(data, indent=2))
 
-        try:
+      try:
             entry = data.get('entry', [])[0]
             changes = entry.get('changes', [])[0].get('value', {})
 
@@ -105,13 +105,14 @@ def recibir_webhook():
                 print(f"Mensaje procesado de {telefono_paciente}: {texto_recibido}")
 
                 # Evaluar respuesta del paciente
-                if any(x in texto_recibido for x in ["confirm", "si", "sí", "correcto", "ok"]):
+                if any(x in texto_recibido for x in ["confirm", "sí", "si", "correcto", "ok"]):
                     enviar_texto_wa(telefono_paciente, "¡Perfecto! Hemos confirmado tu cita. ✅")
                     try:
                         service = asistente_total.obtener_servicio_google()
                         if service:
-                            # Enviamos el texto real recibido para que coloque la palomita
-                            asistente_total.marcar_confirmado(telefono_paciente, service, texto_recibido)
+                            # 🎯 Limpieza para Calendar: Extraemos los últimos 10 dígitos (elimina el '521')
+                            telefono_buscar = "".join(filter(str.isdigit, str(telefono_paciente)))[-10:]
+                            asistente_total.marcar_confirmado(telefono_buscar, service, "confirmar")
                     except Exception as e:
                         print(f"Error en Google Calendar: {e}")
 
@@ -120,8 +121,9 @@ def recibir_webhook():
                     try:
                         service = asistente_total.obtener_servicio_google()
                         if service:
-                            # Enviamos el texto real recibido para que asistente_total coloque la equis ❌
-                            asistente_total.marcar_confirmado(telefono_paciente, service, texto_recibido)
+                            # 🎯 Limpieza para Calendar: Extraemos los últimos 10 dígitos (elimina el '521')
+                            telefono_buscar = "".join(filter(str.isdigit, str(telefono_paciente)))[-10:]
+                            asistente_total.marcar_confirmado(telefono_buscar, service, "reagendar")
                     except Exception as e:
                         print(f"Error en Google Calendar: {e}")
 
