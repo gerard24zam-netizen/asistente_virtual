@@ -96,9 +96,11 @@ def recibir_webhook():
                 mensaje_info = changes['messages'][0]
                 telefono_paciente = mensaje_info['from']
                 
-                texto_recibido = ""
+               texto_recibido = ""
                 if 'text' in mensaje_info:
                     texto_recibido = mensaje_info['text']['body'].lower().strip()
+                elif 'button' in mensaje_info:
+                    texto_recibido = mensaje_info['button']['text'].lower().strip()
 
                 print(f"Mensaje procesado de {telefono_paciente}: {texto_recibido}")
 
