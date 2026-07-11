@@ -12,9 +12,9 @@ def marcar_confirmado(telefono_received, service, respuesta_texto):
     
    # 1. Determinar el emoji según la respuesta escrita o de botones de Meta
     # Agregamos "confirmar" y variaciones de la plantilla oficial
-    if any(x in texto_limpio for x in ["confirmar", "confirmo", "si", "sí", "correcto", "ok", "confirmacion"]):
+    if any(x in texto_limpio for x in ["Si_ confirmo", "confirmar", "confirmo", "si", "sí", "correcto", "ok", "confirmacion"]):
         emoji = "✅"
-    elif any(x in texto_limpio for x in ["cancelar", "reagendar", "no", "cancel", "no puedo", "cancelacion"]):
+    elif any(x in texto_limpio for x in ["No, reagendar", "cancelar", "reagendar", "no", "cancel", "no puedo", "cancelacion"]):
         emoji = "❌"
     else:
         print(f"⚠️ Respuesta no concluyente ('{respuesta_texto}'). No coincide con palabras clave ni botones.")
