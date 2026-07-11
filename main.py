@@ -66,6 +66,28 @@ def enviar_plantilla_wa(telefono_destino, nombre_paciente, hora_cita):
 # ==========================================
 # PUERTA 1: WEBHOOK (VERIFICACIÓN Y RESPUESTAS DEL PACIENTE)
 # ==========================================
+
+# =====================================================================
+# FUNCIÓN ENLACE: ENVÍA EL ESTATUS DE REGRESO A GOOGLE APPS SCRIPT
+# =====================================================================
+def notificar_cambio_a_google(telefono_paciente, estatus_evento):
+    # Pega aquí la URL que te dio Google al implementar como Aplicación Web
+    URL_GOOGLE_WEBAPP = "https://script.google.com/macros/s/AKfycbwVkPIYpllxegZaPvJACGNSSOwty5mcBxNTY_MMPgySMN-VuVjjVknRqUWYBShJPZJ3zQ/exec"
+    
+    # Extraemos solo los últimos 10 dígitos para asegurar compatibilidad con Google Calendar
+    telefono_10_digitos = telefono_paciente[-10:]
+    
+    payload = {
+        "telefono": telefono_10_digitos,
+        "estatus": estatus_evento  # Enviará 'confirmado' o 'cancelado'
+    }
+    try:
+        import requests
+        response = requests.post(URL_GOOGLE_WEBAPP, json=payload)
+        print(f" Sincronización con Google Calendar: {response.json()}")
+    except Exception as e:
+        print(f"❌ Error al sincronizar con Google Calendar: {e}")
+
 @app.route('/webhook', methods=['GET', 'POST'])
 def recibir_webhook():
     # A) VERIFICACIÓN DE META
@@ -126,6 +148,17 @@ def recibir_webhook():
                             asistente_total.marcar_confirmado(telefono_buscar, service, "reagendar")
                     except Exception as e:
                         print(f"Error en Google Calendar: {e}")
+                        if button_id == "confirmar_cita":
+                            print(f"Paciente {telefono} confirmó cita")
+                            enviar_mensaje_texto(telefono, "¡Gracias! Tu cita ha sido confirmada con éxito. Te esperamos.")
+                            #  NUEVA LÍNEA: Avisamos a Google Calendar que ponga la palomita
+                            notificar_cambio_a_google(telefono, "confirmado")
+                                    
+                        elif button_id == "cancelar_cita":
+                             print(f"Paciente {telefono} canceló cita")
+                             enviar_mensaje_texto(telefono, "Entendido. Tu cita ha sido cancelada. Si deseas reagendar, quedamos a tus órdenes.")
+                             #  NUEVA LÍNEA: Avisamos a Google Calendar que ponga el tache
+                             notificar_cambio_a_google(telefono, "cancelado")
 
         except Exception as e:
             print(f"Error estructurando datos del webhook: {e}")
