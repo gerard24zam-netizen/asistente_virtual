@@ -83,12 +83,12 @@ def recibir_webhook():
         return "Faltan parámetros", 400
 
  # B) RECEPCIÓN DE MENSAJES EN TIEMPO REAL (POST)
-    if request.method == 'POST':
+ if request.method == 'POST':
         data = request.get_json()
         print("--- NOTIFICACIÓN DE META (WEBHOOK) ---")
         print(json.dumps(data, indent=2))
 
-      try:
+        try:
             entry = data.get('entry', [])[0]
             changes = entry.get('changes', [])[0].get('value', {})
 
@@ -110,7 +110,7 @@ def recibir_webhook():
                     try:
                         service = asistente_total.obtener_servicio_google()
                         if service:
-                            # 🎯 Limpieza para Calendar: Extraemos los últimos 10 dígitos (elimina el '521')
+                            # Limpieza para Calendar: Extraemos los últimos 10 dígitos (elimina el '521')
                             telefono_buscar = "".join(filter(str.isdigit, str(telefono_paciente)))[-10:]
                             asistente_total.marcar_confirmado(telefono_buscar, service, "confirmar")
                     except Exception as e:
@@ -121,7 +121,7 @@ def recibir_webhook():
                     try:
                         service = asistente_total.obtener_servicio_google()
                         if service:
-                            # 🎯 Limpieza para Calendar: Extraemos los últimos 10 dígitos (elimina el '521')
+                            # Limpieza para Calendar: Extraemos los últimos 10 dígitos (elimina el '521')
                             telefono_buscar = "".join(filter(str.isdigit, str(telefono_paciente)))[-10:]
                             asistente_total.marcar_confirmado(telefono_buscar, service, "reagendar")
                     except Exception as e:
@@ -129,7 +129,7 @@ def recibir_webhook():
 
         except Exception as e:
             print(f"Error estructurando datos del webhook: {e}")
-            
+
         return "EVENT_RECEIVED", 200
 
 # ==========================================
