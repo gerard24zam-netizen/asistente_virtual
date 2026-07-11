@@ -88,6 +88,17 @@ def notificar_cambio_a_google(telefono_paciente, estatus_evento):
     except Exception as e:
         print(f"❌ Error al sincronizar con Google Calendar: {e}")
 
+# --- COPIA ESTO Y PÉGALO ARRIBA DE TU FUNCIÓN PRINCIPAL ---
+
+def notificar_al_doctor(nombre_paciente, estatus, telefono):
+    # Sustituye 'NUMERO_DOCTOR' por el número real (ej: 5214431234567)
+    numero_doctor = "521NUMERO_AQUI" 
+    mensaje_doctor = f"🔔 *AVISO DE CITA*\n\nEl paciente: {nombre_paciente}\nTel: {telefono}\nRespondió: *{estatus.upper()}*"
+    
+    # Aquí llamas a tu función que ya usas para enviar mensajes
+    # (Asegúrate de usar el nombre de la función que ya tienes en tu código para enviar mensajes)
+    enviar_mensaje_a_whatsapp(numero_doctor, mensaje_doctor)
+    
 @app.route('/webhook', methods=['GET', 'POST'])
 def recibir_webhook():
     # A) VERIFICACIÓN DE META
@@ -125,7 +136,15 @@ def recibir_webhook():
                     texto_recibido = mensaje_info['button']['text'].lower().strip()
 
                 print(f"Mensaje procesado de {telefono_paciente}: {texto_recibido}")
+# ... (Dentro de tu función principal, después de procesar el clic del paciente)
 
+    # 1. Tu lógica actual de actualizar Google Calendar (lo que ya tienes)
+    actualizar_google_calendar(telefono, estatus)
+
+    # 2. AGREGA ESTA LÍNEA AQUÍ PARA AVISAR AL DOCTOR
+    notificar_al_doctor(nombre_paciente, estatus, telefono)
+
+    return "ok", 200
                 # Evaluar respuesta del paciente
                 if any(x in texto_recibido for x in ["Si, confirmo", "confirm", "sí", "si", "correcto", "ok"]):
                     enviar_texto_wa(telefono_paciente, "¡Perfecto! Hemos confirmado tu cita. ✅")
