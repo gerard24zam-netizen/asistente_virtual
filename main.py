@@ -33,7 +33,7 @@ def enviar_texto_wa(telefono_destino, mensaje_texto):
     print(f"Respuesta texto WA: {response.status_code} - {response.text}")
     return response
 
-def enviar_plantilla_wa(telefono_destino, nombre_paciente, hora_cita):
+def enviar_plantilla_wa(telefono_destino, nombre_paciente, fecha_cita, hora_cita):
     """Envía la plantilla aprobada por Meta (para recordatorios automáticos iniciales)"""
     url = f"https://graph.facebook.com/v18.0/{TELEFONO_ID}/messages"
     headers = {
@@ -45,15 +45,15 @@ def enviar_plantilla_wa(telefono_destino, nombre_paciente, hora_cita):
         "to": telefono_destino,
         "type": "template",
         "template": {
-            "name": "confirmacion_de_cita", 
+            "name": "confirmacion_de_cita", # <-- ⚠️ NOTA: Asegúrate de que este sea el nombre exacto en tu Meta Business Suite
             "language": { "code": "es_MX" },
             "components": [
                 {
                     "type": "body",
                     "parameters": [
-                        {"type": "text", "text": nombre_paciente}, # Llena el {{1}}
-                        {"type": "text", "text": "hoy"},            # Llena el {{2}}
-                        {"type": "text", "text": hora_cita}          # Llena el {{3}}
+                        {"type": "text", "text": nombre_paciente}, # Llena el {{1}} (Nombre)
+                        {"type": "text", "text": fecha_cita},      # Llena el {{2}} (Fecha de la cita)
+                        {"type": "text", "text": hora_cita}        # Llena el {{3}} (Hora de la cita)
                     ]
                 }
             ]
@@ -108,7 +108,8 @@ def recibir_webhook():
                     try:
                         service = asistente_total.obtener_servicio_google()
                         if service:
-                            asistente_total.marcar_confirmado(telefono_paciente, service, "confirmar")
+                            # Enviamos el texto real recibido para que asistente_total coloque la palomita ✅
+                            asistente_total.marcar_confirmado(telefono_paciente, service, texto_recibido)
                     except Exception as e:
                         print(f"Error en Google Calendar: {e}")
 
@@ -117,7 +118,8 @@ def recibir_webhook():
                     try:
                         service = asistente_total.obtener_servicio_google()
                         if service:
-                            asistente_total.marcar_confirmado(telefono_paciente, service, "reagendar")
+                            # Enviamos el texto real recibido para que asistente_total coloque la equis ❌
+                            asistente_total.marcar_confirmado(telefono_paciente, service, texto_recibido)
                     except Exception as e:
                         print(f"Error en Google Calendar: {e}")
 
@@ -135,6 +137,7 @@ def enviar_recordatorio():
         data = request.get_json()
         telefono = data.get('telefono')
         nombre = data.get('nombre', 'Paciente')
+        fecha = data.get('fecha', 'hoy') # Si Sheets no manda fecha, toma "hoy" por defecto
         hora = data.get('hora', 'la hora acordada')
         
         if not telefono:
@@ -145,8 +148,8 @@ def enviar_recordatorio():
         if len(telefono_limpio) == 10:
             telefono_limpio = f"52{telefono_limpio}"
         
-        print(f"Despachando plantilla de recordatorio para {nombre} a las {hora}")
-        enviar_plantilla_wa(telefono_limpio, nombre, hora)
+        print(f"Despachando plantilla de recordatorio para {nombre} el {fecha} a las {hora}")
+        enviar_plantilla_wa(telefono_limpio, nombre, fecha, hora)
         
         return jsonify({"status": "Recordatorio enviado a Meta con éxito"}), 200
         
