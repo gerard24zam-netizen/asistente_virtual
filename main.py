@@ -105,7 +105,7 @@ def recibir_webhook():
                 print(f"Mensaje procesado de {telefono_paciente}: {texto_recibido}")
 
                 # Evaluar respuesta del paciente
-                if any(x in texto_recibido for x in ["Si, confirmo", "confirm", "sí", "si", "correcto", "ok"]):
+                if any(x in texto_recibido for x in ["confirm", "sí", "si", "correcto", "ok"]):
                     enviar_texto_wa(telefono_paciente, "¡Perfecto! Hemos confirmado tu cita. ✅")
                     try:
                         service = asistente_total.obtener_servicio_google()
@@ -116,7 +116,7 @@ def recibir_webhook():
                     except Exception as e:
                         print(f"Error en Google Calendar: {e}")
 
-                elif any(x in texto_recibido for x in ["No, reagendar". "reagendar", "cancel", "no", "no puedo"]):
+                elif any(x in texto_recibido for x in ["reagendar", "cancel", "no", "no puedo"]):
                     enviar_texto_wa(telefono_paciente, "Entendido, nos pondremos en contacto para reagendar. ❌")
                     try:
                         service = asistente_total.obtener_servicio_google()
