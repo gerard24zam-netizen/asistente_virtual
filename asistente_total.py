@@ -10,13 +10,14 @@ def limpiar_telefono(tel):
 def marcar_confirmado(telefono_received, service, respuesta_texto):
     texto_limpio = respuesta_texto.strip().lower()
     
-    # 1. Determinar el emoji según la respuesta
-    if any(x in texto_limpio for x in ["confirmo", "si", "sí", "correcto", "ok"]):
+   # 1. Determinar el emoji según la respuesta escrita o de botones de Meta
+    # Agregamos "confirmar" y variaciones de la plantilla oficial
+    if any(x in texto_limpio for x in ["Si, confirmo", "confirmar", "confirmo", "si", "sí", "correcto", "ok", "confirmacion"]):
         emoji = "✅"
-    elif any(x in texto_limpio for x in ["reagendar", "no", "cancel", "no puedo"]):
+    elif any(x in texto_limpio for x in ["No, reagendar", "cancelar", "reagendar", "no", "cancel", "no puedo", "cancelacion"]):
         emoji = "❌"
     else:
-        print(f"Respuesta no concluyente ('{respuesta_texto}'), no se modifica el calendario.")
+        print(f"⚠️ Respuesta no concluyente ('{respuesta_texto}'). No coincide con palabras clave ni botones.")
         return
 
     # 2. Extraer estrictamente los últimos 10 dígitos del WhatsApp entrante
