@@ -39,6 +39,7 @@ def detonar_recordatorio():
                     "parameters": [
                         {"type": "text", "text": nombre},
                         {"type": "text", "text": fecha}
+                        {"type": "text", "text": "10:00 AM"}       # {{3}} - AQUÍ VA TU TERCER DATO
                     ]
                 }
             ]
