@@ -115,22 +115,27 @@ def recibir_mensajes():
         return jsonify({"status": "error"}), 200
 
 # ==========================================
-# 5. RUTA PARA RECORDATORIOS AUTOMÁTICOS (Desde Google)
+# 5. RUTA PARA RECORDATORIOS AUTOMÁTICOS 
 # ==========================================
 @app.route('/recordatorios', methods=['POST'])
 def detonar_recordatorio():
     try:
         data = request.get_json()
-        telefono = data.get('telefono')
+        telefono = str(data.get('telefono')).strip() # Limpiamos espacios
         
         if telefono:
-            # Reemplaza con el nombre de tu plantilla preaprobada de Meta para recordatorios
-            enviar_plantilla_meta(telefono, "nombre_plantilla_recordatorio_cita")
+            # BLINDAJE: Si el número tiene 10 dígitos, le agregamos el 52 de México
+            if len(telefono) == 10:
+                telefono = "52" + telefono
+                
+            # Disparamos la plantilla
+            enviar_plantilla_meta(telefono, "AQUI_EL_NOMBRE_DE_TU_PLANTILLA")
+            print(f"Intento de envío de recordatorio al: {telefono}") # Registro para logs
             
-        return jsonify({"status": "recordatorio enviado"}), 200
+        return jsonify({"status": "recordatorio procesado"}), 200
     except Exception as e:
         print(f"Error procesando recordatorio: {e}")
         return jsonify({"status": "error"}), 500
-
+        
 if __name__ == '__main__':
     app.run(port=5000)
