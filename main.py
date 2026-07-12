@@ -27,7 +27,7 @@ def actualizar_calendario(telefono, estatus):
 # 3. FUNCIÓN: ENVIAR PLANTILLA DE META
 # ==========================================
 def enviar_plantilla_meta(telefono_destino, nombre_plantilla):
-    """Envía la plantilla preaprobada de WhatsApp al paciente"""
+    """confirmacion_cita"""
     url = f"https://graph.facebook.com/v17.0/{TELEFONO_ID_META}/messages"
     headers = {
         "Authorization": f"Bearer {META_TOKEN}",
