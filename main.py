@@ -119,8 +119,6 @@ def recibir_mensajes():
 # ==========================================
 @app.route('/recordatorios', methods=['POST'])
 def detonar_recordatorio(): 
-    # Dentro de tu def detonar_recordatorio():
-enviar_plantilla_meta(telefono, "confirmacion_cita")
     try:
         data = request.get_json()
         telefono = str(data.get('telefono')).strip() # Limpiamos espacios
