@@ -1,59 +1,118 @@
-from flask import Flask, request
+from flask import Flask, request, jsonify
 import requests
 
 app = Flask(__name__)
 
-# --- CONFIGURACIÓN ---
-DOCTOR_PHONE_NUMBER = "5217226293417" # Número del doctor
-URL_GOOGLE_WEBAPP = "https://script.google.com/macros/s/AKfycbwVkPIYpllxegZaPvJACGNSSOwty5mcBxNTY_MMPgySMN-VuVjjVknRqUWYBShJPZJ3zQ/exec" # URL de Google
+# ==========================================
+# 1. CONFIGURACIONES PRINCIPALES
+# ==========================================
+# Debes colocar tus credenciales exactas dentro de las comillas
+META_TOKEN = "EAAXdEhil3gMBR0uiujuuAvK5nqaj8A9boQQ7Yd59u0Xa8GF86XVtJl2k7EWLecDPk74CCtBbu0VH2cOIL8DW9zd4h3Mbv3sdbmReK473770t9TDfyDZCqJhomFBbxc0kSu5zgpZAy4cWMNnssZAyZB81Gb6c9dfmwfrzTYGjy6oOIc7d7Px8vTATQ9cwHKROmwZDZD"
+TELEFONO_ID_META = "1120833397777315"  # El ID numérico de tu línea de WhatsApp
+VERIFY_TOKEN = "TOKEN_SECRETO_META"    # El que configuraste en el panel de Meta para el Webhook
+GOOGLE_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbwVkPIYpllxegZaPvJACGNSSOwty5mcBxNTY_MMPgySMN-VuVjjVknRqUWYBShJPZJ3zQ/exec"  # La URL del script que actualiza el calendario
 
-# --- 1. LÓGICA DE CALENDARIO (Con la limpieza de strings para evitar errores) ---
-def actualizar_google_calendar(telefono, estatus):
-    # Estatus esperado: "confirmado" o "cancelado"
-    # Esto prepara el título para Google Apps Script
+# ==========================================
+# 2. FUNCIÓN: ACTUALIZAR GOOGLE CALENDAR
+# ==========================================
+def actualizar_calendario(telefono, estatus):
+    """Envía la orden a Google para colocar la ✅ o la ❌"""
+    payload = {"telefono": telefono, "estatus": estatus}
+    try:
+        requests.post(GOOGLE_WEBAPP_URL, json=payload, timeout=5)
+    except Exception as e:
+        print(f"Error conectando a Google: {e}")
+
+# ==========================================
+# 3. FUNCIÓN: ENVIAR PLANTILLA DE META
+# ==========================================
+def enviar_plantilla_meta(telefono_destino, nombre_plantilla):
+    """Envía la plantilla preaprobada de WhatsApp al paciente"""
+    url = f"https://graph.facebook.com/v17.0/{TELEFONO_ID_META}/messages"
+    headers = {
+        "Authorization": f"Bearer {META_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    
+    # Estructura oficial requerida por Meta
     payload = {
-        "telefono": telefono, # El sistema limpiará los números allá
-        "estatus": estatus    # Esto permite que Google ponga ✅ o ❌
+        "messaging_product": "whatsapp",
+        "to": telefono_destino,
+        "type": "template",
+        "template": {
+            "name": nombre_plantilla,
+            "language": {
+                "code": "es_MX"  # Ajusta a "es" si tu plantilla no está en español de México
+            }
+        }
     }
     try:
-        response = requests.post(URL_GOOGLE_WEBAPP, json=payload)
-        return response.status_code
+        requests.post(url, headers=headers, json=payload)
     except Exception as e:
-        print(f"Error conectando a Calendar: {e}")
-        return None
+        print(f"Error enviando plantilla a Meta: {e}")
 
-# --- 2. LÓGICA DE NOTIFICACIÓN AL DOCTOR ---
-def notificar_al_doctor(nombre_paciente, telefono, estatus):
-    mensaje = f"🔔 *Notificación de Cita*\n\nPaciente: {nombre_paciente}\nTel: {telefono}\nRespondió: *{estatus.upper()}*"
-    # AQUÍ DEBE IR TU LÓGICA DE ENVÍO DE WHATSAPP (Meta API)
-    # Ejemplo: enviar_mensaje_meta(DOCTOR_PHONE_NUMBER, mensaje)
-    print(f"Enviando notificación: {mensaje}")
+# ==========================================
+# 4. RUTAS DEL WEBHOOK (NÚCLEO DEL ASISTENTE)
+# ==========================================
 
-# --- 3. WEBHOOK PRINCIPAL (Procesador de respuestas de Meta) ---
+# A. Verificación del Webhook (Requisito de seguridad de Meta)
+@app.route('/webhook', methods=['GET'])
+def verificar_token():
+    hub_mode = request.args.get('hub.mode')
+    hub_verify_token = request.args.get('hub.verify_token')
+    hub_challenge = request.args.get('hub.challenge')
+    
+    if hub_mode == 'subscribe' and hub_verify_token == VERIFY_TOKEN:
+        return hub_challenge, 200
+    return "Fallo de autenticacion", 403
+
+# B. Recepción y procesamiento de respuestas del paciente
 @app.route('/webhook', methods=['POST'])
-def webhook():
-    data = request.json
-    
-    # Aquí va la lógica que ya tienes para interpretar la respuesta del paciente
-    # (Lo que ya tienes hecho para detectar si dio clic en "Confirmar" o "Cancelar")
-    # Ejemplo de extracción (debes asegurar que coincida con tu JSON actual):
-    nombre_paciente = data.get('nombre') 
-    telefono = data.get('telefono')
-    estatus = data.get('estatus') # Debe ser "confirmado" o "cancelado"
-    
-    # --- PROCESAMIENTO INTEGRAL ---
-    
-    # A. Actualizar Google Calendar (con la palomita o equis)
-    actualizar_google_calendar(telefono, estatus)
-    
-    # B. Notificar al doctor (la nueva función)
-    notificar_al_doctor(nombre_paciente, telefono, estatus)
-    
-    # C. (Opcional) Aquí tu lógica para enviar un mensaje de confirmación 
-    # de vuelta al paciente usando tu plantilla aprobada de Meta
-    # enviar_plantilla_meta(telefono, "confirmacion_cita")
-    
-    return "ok", 200
+def recibir_mensajes():
+    try:
+        body = request.get_json()
+        
+        # Validamos que el JSON provenga de WhatsApp
+        if body.get('object'):
+            if (body.get('entry') and 
+                body['entry'][0].get('changes') and 
+                body['entry'][0]['changes'][0].get('value') and 
+                body['entry'][0]['changes'][0]['value'].get('messages')):
+                
+                # Extraemos la información crítica del paciente
+                mensaje_info = body['entry'][0]['changes'][0]['value']['messages'][0]
+                telefono_paciente = mensaje_info.get('from')
+                
+                # Verificamos si el paciente presionó un botón interactivo
+                if mensaje_info.get('type') == 'interactive':
+                    tipo_interactivo = mensaje_info['interactive'].get('type')
+                    
+                    if tipo_interactivo == 'button_reply':
+                        # Obtenemos el ID exacto del botón que el paciente seleccionó
+                        id_boton = mensaje_info['interactive']['button_reply'].get('id')
+                        
+                        # --- LÓGICA DE NEGOCIO ---
+                        
+                        # CASO 1: EL PACIENTE CONFIRMA LA CITA
+                        if id_boton == "payload_confirmar": 
+                            # 1. Avisamos al calendario para poner la ✅
+                            actualizar_calendario(telefono_paciente, "confirmado")
+                            # 2. Disparamos la plantilla preaprobada de agradecimiento/confirmación
+                            enviar_plantilla_meta(telefono_paciente, "nombre_plantilla_confirmacion")
+                            
+                        # CASO 2: EL PACIENTE CANCELA LA CITA
+                        elif id_boton == "payload_cancelar":
+                            # 1. Avisamos al calendario para poner la ❌
+                            actualizar_calendario(telefono_paciente, "cancelado")
+                            # 2. Disparamos la plantilla de cancelación al paciente
+                            enviar_plantilla_meta(telefono_paciente, "nombre_plantilla_cancelacion")
+
+        return jsonify({"status": "success"}), 200
+        
+    except Exception as e:
+        print(f"Error crítico en el webhook: {e}")
+        # Retornamos 200 a Meta para que no bloquee el webhook por errores internos
+        return jsonify({"status": "error"}), 200
 
 if __name__ == '__main__':
     app.run(port=5000)
