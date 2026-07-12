@@ -40,7 +40,7 @@ def enviar_plantilla_meta(telefono_destino, nombre_plantilla):
         "to": telefono_destino,
         "type": "template",
         "template": {
-            "name": nombre_plantilla,
+            "name": "confirmacion_cita",
             "language": {
                 "code": "es_MX"  # Ajusta a "es" si tu plantilla no está en español de México
             }
