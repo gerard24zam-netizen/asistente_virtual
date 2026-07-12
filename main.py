@@ -114,5 +114,23 @@ def recibir_mensajes():
         # Retornamos 200 a Meta para que no bloquee el webhook por errores internos
         return jsonify({"status": "error"}), 200
 
+# ==========================================
+# 5. RUTA PARA RECORDATORIOS AUTOMÁTICOS (Desde Google)
+# ==========================================
+@app.route('/recordatorios', methods=['POST'])
+def detonar_recordatorio():
+    try:
+        data = request.get_json()
+        telefono = data.get('telefono')
+        
+        if telefono:
+            # Reemplaza con el nombre de tu plantilla preaprobada de Meta para recordatorios
+            enviar_plantilla_meta(telefono, "nombre_plantilla_recordatorio_cita")
+            
+        return jsonify({"status": "recordatorio enviado"}), 200
+    except Exception as e:
+        print(f"Error procesando recordatorio: {e}")
+        return jsonify({"status": "error"}), 500
+
 if __name__ == '__main__':
     app.run(port=5000)
