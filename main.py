@@ -35,22 +35,35 @@ def webhook():
 @app.route('/recordatorios', methods=['POST'])
 def detonar_recordatorio():
     data = request.get_json()
+    print(f"DEBUG: Datos recibidos en Render: {data}") # <-- Veremos qué llega aquí
+    
     telefono = "".join(filter(str.isdigit, str(data.get('telefono', ''))))
     if not telefono.startswith('52'): telefono = '52' + telefono
     
     payload = {
-        "messaging_product": "whatsapp", "to": telefono, "type": "template",
+        "messaging_product": "whatsapp",
+        "to": telefono,
+        "type": "template",
         "template": {
-            "name": "confirmacion_cita", "language": {"code": "es_MX"},
-            "components": [{"type": "body", "parameters": [
-                {"type": "text", "text": data.get('nombre', 'Paciente')},
-                {"type": "text", "text": data.get('hora', '00:00')}
-            ]}]
+            "name": "confirmacion_cita",
+            "language": {"code": "es_MX"},
+            "components": [{
+                "type": "body",
+                "parameters": [
+                    {"type": "text", "text": data.get('nombre', 'Paciente')},
+                    {"type": "text", "text": data.get('hora', '00:00')}
+                ]
+            }]
         }
     }
-    resp = requests.post(f"https://graph.facebook.com/v17.0/{TELEFONO_ID_META}/messages", 
-                         json=payload, headers={"Authorization": f"Bearer {META_TOKEN}", "Content-Type": "application/json"})
-    return jsonify({"status": resp.status_code})
-
-if __name__ == '__main__':
-    app.run(port=5000)
+    
+    headers = {"Authorization": f"Bearer {META_TOKEN}", "Content-Type": "application/json"}
+    
+    try:
+        resp = requests.post(f"https://graph.facebook.com/v17.0/{TELEFONO_ID_META}/messages", json=payload, headers=headers)
+        # Esto imprimirá el error real si Meta rechaza el mensaje
+        print(f"DEBUG: Respuesta de Meta: {resp.status_code} - {resp.text}")
+        return jsonify({"status": resp.status_code, "response": resp.text})
+    except Exception as e:
+        print(f"DEBUG: Error crítico de conexión: {str(e)}")
+        return jsonify({"error": str(e)}), 500
