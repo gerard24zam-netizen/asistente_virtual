@@ -9,7 +9,25 @@ def limpiar_telefono(tel):
 
 def marcar_confirmado(telefono_received, service, respuesta_texto):
     texto_limpio = respuesta_texto.strip().lower()
+    service = obtener_servicio_calendar() # Usa la conexión que ya tienes configurada
+    ahora = datetime.utcnow().isoformat() + 'Z'
     
+    # Buscamos eventos desde hoy
+    eventos_result = service.events().list(calendarId='primary', timeMin=ahora,
+                                           singleEvents=True, orderBy='startTime').execute()
+    eventos = eventos_result.get('items', [])
+
+    for evento in eventos:
+        descripcion = evento.get('description', '')
+        # Si el teléfono del mensaje está en la descripción del evento...
+        if telefono_recibido in descripcion:
+            titulo_actual = evento.get('summary', '')
+            if "✅" not in titulo_actual:
+                evento['summary'] = f"✅ {titulo_actual}"
+                service.events().update(calendarId='primary', eventId=evento['id'], body=evento).execute()
+                print(f"Calendario actualizado: ✅ {titulo_actual}")
+                return True
+                
    # 1. Determinar el emoji según la respuesta escrita o de botones de Meta
     # Agregamos "confirmar" y variaciones de la plantilla oficial
     if any(x in texto_limpio for x in ["Si_ confirmo", "confirmar", "confirmo", "si", "sí", "correcto", "ok", "confirmacion"]):
