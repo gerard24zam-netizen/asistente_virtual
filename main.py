@@ -81,14 +81,15 @@ def marcar_evento(telefono_recibido, accion):
 
 @app.route('/debug_calendarios', methods=['GET'])
 def debug_calendarios():
-    # Usamos las mismas credenciales cargadas al inicio para mostrar el correo
-    # Esto evita problemas de archivos que no existen en el servidor
-    correo_asistente = "Revisa tu variable GOOGLE_TOKEN_JSON en Render"
+    # Obtenemos la información de la variable de entorno
+    creds_json = os.environ.get('GOOGLE_TOKEN_JSON')
+    info = json.loads(creds_json)
+    correo_asistente = info.get('client_email')
     
     lista = calendario.calendarList().list().execute()
     items = lista.get('items', [])
-    resultado = f"Correo del asistente: {correo_asistente}\n\nCALENDARIOS ENCONTRADOS:\n"
     
+    resultado = f"Copia este correo para dar permisos: {correo_asistente}\n\nCALENDARIOS ENCONTRADOS:\n"
     for cal in items:
         resultado += f"Nombre: {cal.get('summary')} | ID: {cal.get('id')}\n"
     
