@@ -33,8 +33,7 @@ def limpiar_telefono(tel):
 
 # --- LÓGICA DE ACTUALIZACIÓN ---
 def marcar_evento(telefono_recibido, accion):
-    # Solo limpiamos el teléfono que recibimos del mensaje
-    tel_buscado = "".join(filter(str.isdigit, str(telefono_recibido)))[-10:]
+    tel_buscado = limpiar_telefono(telefono_recibido)
     print(f"DEBUG: Buscando cita para el teléfono: {tel_buscado} (Acción: {accion})")
     
     zona_mexico = pytz.timezone('America/Mexico_City')
@@ -58,16 +57,21 @@ def marcar_evento(telefono_recibido, accion):
         titulo = evento.get('summary', '')
         descripcion = evento.get('description', '')
         
-        # Combinamos todo en un solo bloque de texto para buscar
-        texto_completo = (titulo + " " + descripcion)
+        # 1. ELIMINAR CORREOS: Esto quita cualquier cosa que parezca email para que los números del correo no confundan
+        descripcion_sin_emails = re.sub(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', '', descripcion)
         
-        # Usamos re.search para buscar el número exacto, ignorando fechas y otros números
-        if re.search(tel_buscado, texto_completo):
+        # 2. Unimos todo para buscar
+        texto_completo = f"{titulo} {descripcion_sin_emails}"
+        
+        # 3. Limpiamos todos los números que aparecen en el texto
+        numeros_en_evento = limpiar_telefono(texto_completo)
+        
+        # 4. Buscamos el teléfono buscado dentro de los números encontrados
+        if tel_buscado in numeros_en_evento:
             if simbolo in titulo:
                 print("DEBUG: El evento ya estaba marcado.")
                 return True
             
-            # Limpiamos marcas previas antes de poner la nueva
             nuevo_titulo = f"{titulo.replace(' ✅', '').replace(' ❌', '').strip()} {simbolo}"
             evento['summary'] = nuevo_titulo
             calendario.events().update(calendarId='gerard24zam@gmail.com', eventId=evento['id'], body=evento).execute()
@@ -75,15 +79,13 @@ def marcar_evento(telefono_recibido, accion):
             return True
             
     return False
-# --- RUTAS ---
 
+# --- RUTAS ---
 @app.route('/debug_calendarios', methods=['GET'])
 def debug_calendarios():
     creds_json = os.environ.get('GOOGLE_TOKEN_JSON')
     info = json.loads(creds_json)
     correo_asistente = info.get('client_email')
-    
-    # Nota: Este endpoint puede seguir saliendo vacío por la naturaleza de las Service Accounts, es normal.
     return f"Copia este correo para dar permisos: {correo_asistente}"
 
 @app.route('/recordatorios', methods=['POST'])
