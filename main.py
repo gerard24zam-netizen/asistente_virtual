@@ -1,3 +1,4 @@
+import sys
 import re
 import os
 import json
@@ -93,22 +94,26 @@ def detonar_recordatorio():
 
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
+    # ESTO DEBE SER LO PRIMERO QUE HACE LA FUNCIÓN
+    print("--- RECIBÍ UNA PETICIÓN EN EL WEBHOOK ---")
+    sys.stdout.flush() 
+
     if request.method == 'GET':
-        if request.args.get("hub.verify_token") == VERIFY_TOKEN:
+        if request.args.get("hub.verify_token") == "TOKEN_SECRETO_META":
             return request.args.get("hub.challenge")
         return "Forbidden", 403
     
-    data = request.get_json()
-    if 'messages' in data['entry'][0]['changes'][0]['value']:
-        msg = data['entry'][0]['changes'][0]['value']['messages'][0]
-        texto = msg.get('text', {}).get('body', '').lower()
-        telefono = limpiar_telefono(msg.get('from'))
-        
-        if "si" in texto or "confirmar" in texto:
-            marcar_evento(telefono, 'confirmar')
-        elif "no" in texto or "reagendar" in texto:
-            marcar_evento(telefono, 'reagendar')
-            
+    # Aquí capturamos lo que llega
+    try:
+        data = request.get_json()
+        print(f"DATOS RECIBIDOS: {data}")
+        sys.stdout.flush()
+    except Exception as e:
+        print(f"ERROR AL LEER JSON: {e}")
+        sys.stdout.flush()
+        return "Error", 400
+
+    # ... el resto de tu lógica sigue aquí abajo ...
     return "OK", 200
 
 if __name__ == '__main__':
