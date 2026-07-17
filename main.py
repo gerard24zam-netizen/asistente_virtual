@@ -16,7 +16,7 @@ SCOPES = ['https://www.googleapis.com/auth/calendar']
 
 def obtener_servicio_calendar():
     # Leemos el JSON desde la variable de entorno que configuramos en Render
-    creds_json = os.environ.get('GOOGLE_CREDENTIALS')
+    creds_json = os.environ.get('GOOGLE_TOKEN_JSON')
     if not creds_json:
         raise ValueError("Error: No se encontró la variable GOOGLE_CREDENTIALS")
     info = json.loads(creds_json)
