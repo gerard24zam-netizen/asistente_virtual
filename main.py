@@ -56,14 +56,21 @@ def marcar_evento(telefono_recibido, accion):
         
     for evento in eventos:
         titulo = evento.get('summary', '')
-        titulo_limpio = limpiar_telefono(titulo)
+        descripcion = evento.get('description', '') # Obtenemos la descripción
         
-        if tel_buscado in titulo_limpio:
+        # Limpiamos tanto título como descripción para buscar el teléfono
+        titulo_limpio = limpiar_telefono(titulo)
+        descripcion_limpia = limpiar_telefono(descripcion)
+        
+        if tel_buscado in titulo_limpio or tel_buscado in descripcion_limpia:
+            if simbolo in titulo: # Si ya tiene la marca, no hacemos nada
+                print("DEBUG: El evento ya estaba marcado.")
+                return True:
             # Limpiamos marcas previas antes de poner la nueva
             nuevo_titulo = f"{titulo.replace(' ✅', '').replace(' ❌', '').strip()} {simbolo}"
             evento['summary'] = nuevo_titulo
             calendario.events().update(calendarId='gerard24zam@gmail.com', eventId=evento['id'], body=evento).execute()
-            print(f"DEBUG: Evento actualizado con {simbolo}")
+            print(f"DEBUG: Evento actualizado en {'título' if tel_buscado in titulo_limpio else 'descripción'}")
             return True
             
     return False
