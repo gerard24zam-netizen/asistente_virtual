@@ -26,75 +26,58 @@ def obtener_servicio_calendar():
     creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
     return build('calendar', 'v3', credentials=creds)
 
-# Inicializamos el calendario globalmente para usarlo en marcar_evento
 calendario = obtener_servicio_calendar()
 
 def limpiar_telefono(tel):
-    # Estandariza a 10 dígitos (últimos 10 números del string)
     return "".join(filter(str.isdigit, str(tel)))[-10:]
 
 # --- LÓGICA DE ACTUALIZACIÓN ---
 def marcar_evento(telefono_recibido, accion):
     tel_buscado = limpiar_telefono(telefono_recibido)
-    print(f"DEBUG: Buscando cita para el teléfono: {tel_buscado}")
+    print(f"DEBUG: Buscando cita para el teléfono: {tel_buscado} (Acción: {accion})")
     
-    # 1. Definir la zona horaria de México
     zona_mexico = pytz.timezone('America/Mexico_City')
-    
-    # 2. Obtener el inicio y fin del día en hora México
     ahora_mexico = datetime.datetime.now(zona_mexico)
     inicio_mexico = ahora_mexico.replace(hour=0, minute=0, second=0, microsecond=0)
     fin_mexico = ahora_mexico.replace(hour=23, minute=59, second=59, microsecond=0)
     
-    # 3. Convertir a UTC (formato ISO con 'Z') para Google Calendar
     inicio = inicio_mexico.astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
     fin = fin_mexico.astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
     
-    print(f"DEBUG: Buscando eventos hoy en México entre {inicio} y {fin}")
-    
+    # Usamos tu correo directamente como ID
     eventos_result = calendario.events().list(calendarId='gerard24zam@gmail.com', timeMin=inicio, timeMax=fin).execute()
     eventos = eventos_result.get('items', [])
     
     if not eventos:
-        print("DEBUG: ¡No se encontraron eventos hoy en el calendario de México!")
+        print("DEBUG: No se encontraron eventos hoy.")
         return False
+        
+    simbolo = "✅" if accion == 'confirmar' else "❌"
         
     for evento in eventos:
         titulo = evento.get('summary', '')
         titulo_limpio = limpiar_telefono(titulo)
         
         if tel_buscado in titulo_limpio:
-            if "✅" in titulo:
-                print("DEBUG: El evento ya estaba marcado.")
-                return True
-                
-            nuevo_titulo = f"{titulo.replace(' ✅', '').replace(' ❌', '')} ✅"
+            # Limpiamos marcas previas antes de poner la nueva
+            nuevo_titulo = f"{titulo.replace(' ✅', '').replace(' ❌', '').strip()} {simbolo}"
             evento['summary'] = nuevo_titulo
             calendario.events().update(calendarId='gerard24zam@gmail.com', eventId=evento['id'], body=evento).execute()
-            print("DEBUG: Evento actualizado exitosamente con hora México.")
+            print(f"DEBUG: Evento actualizado con {simbolo}")
             return True
             
-    print("DEBUG: Ningún evento coincidió con el teléfono en el rango horario de México.")
     return False
 
 # --- RUTAS ---
 
 @app.route('/debug_calendarios', methods=['GET'])
 def debug_calendarios():
-    # Obtenemos la información de la variable de entorno
     creds_json = os.environ.get('GOOGLE_TOKEN_JSON')
     info = json.loads(creds_json)
     correo_asistente = info.get('client_email')
     
-    lista = calendario.calendarList().list().execute()
-    items = lista.get('items', [])
-    
-    resultado = f"Copia este correo para dar permisos: {correo_asistente}\n\nCALENDARIOS ENCONTRADOS:\n"
-    for cal in items:
-        resultado += f"Nombre: {cal.get('summary')} | ID: {cal.get('id')}\n"
-    
-    print(f"DEBUG: {resultado}")
-    return resultado
+    # Nota: Este endpoint puede seguir saliendo vacío por la naturaleza de las Service Accounts, es normal.
+    return f"Copia este correo para dar permisos: {correo_asistente}"
 
 @app.route('/recordatorios', methods=['POST'])
 def detonar_recordatorio():
@@ -140,6 +123,10 @@ def webhook():
         if "si" in texto or "confirmo" in texto:
             print(f"DEBUG: Usuario confirmó: {telefono_cliente}")
             marcar_evento(telefono_cliente, 'confirmar')
+            
+        elif "no" in texto or "reagendar" in texto:
+            print(f"DEBUG: Usuario rechazó: {telefono_cliente}")
+            marcar_evento(telefono_cliente, 'reagendar')
 
     return "OK", 200
 
