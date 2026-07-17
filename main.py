@@ -65,7 +65,8 @@ def marcar_evento(telefono_recibido, accion):
         if tel_buscado in titulo_limpio or tel_buscado in descripcion_limpia:
             if simbolo in titulo: # Si ya tiene la marca, no hacemos nada
                 print("DEBUG: El evento ya estaba marcado.")
-                return True:
+                return True
+            
             # Limpiamos marcas previas antes de poner la nueva
             nuevo_titulo = f"{titulo.replace(' ✅', '').replace(' ❌', '').strip()} {simbolo}"
             evento['summary'] = nuevo_titulo
