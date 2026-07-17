@@ -91,7 +91,17 @@ def debug_calendarios():
 @app.route('/recordatorios', methods=['POST'])
 def detonar_recordatorio():
     data = request.get_json()
-    telefono = data.get('telefono')
+    telefono_raw = data.get('telefono')
+    
+    # Aseguramos que el teléfono tenga el formato 52 + 10 dígitos
+    tel_limpio = "".join(filter(str.isdigit, str(telefono_raw)))
+    if len(tel_limpio) == 10:
+        telefono = "52" + tel_limpio
+    elif len(tel_limpio) == 12 and tel_limpio.startswith("52"):
+        telefono = tel_limpio # Ya viene con el 52
+    else:
+        telefono = tel_limpio # Por si acaso, lo enviamos como venga
+        
     payload = {
         "messaging_product": "whatsapp", "to": telefono, "type": "template",
         "template": {
@@ -105,8 +115,11 @@ def detonar_recordatorio():
     }
     resp = requests.post(f"https://graph.facebook.com/v17.0/{TELEFONO_ID_META}/messages", 
                          json=payload, headers={"Authorization": f"Bearer {META_TOKEN}"})
+    
+    # Imprimimos el resultado para debug
+    print(f"DEBUG: Enviando mensaje a {telefono}. Status: {resp.status_code}, Response: {resp.text}")
+    
     return jsonify({"status": resp.status_code})
-
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
     if request.method == 'GET':
