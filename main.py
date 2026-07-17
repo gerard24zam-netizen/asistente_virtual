@@ -52,7 +52,7 @@ def marcar_evento(telefono_recibido, accion):
     
     print(f"DEBUG: Buscando eventos hoy en México entre {inicio} y {fin}")
     
-    eventos_result = calendario.events().list(calendarId='primary', timeMin=inicio, timeMax=fin).execute()
+    eventos_result = calendario.events().list(calendarId='gerard24zam@gmail.com', timeMin=inicio, timeMax=fin).execute()
     eventos = eventos_result.get('items', [])
     
     if not eventos:
@@ -70,7 +70,7 @@ def marcar_evento(telefono_recibido, accion):
                 
             nuevo_titulo = f"{titulo.replace(' ✅', '').replace(' ❌', '')} ✅"
             evento['summary'] = nuevo_titulo
-            calendario.events().update(calendarId='primary', eventId=evento['id'], body=evento).execute()
+            calendario.events().update(calendarId='gerard24zam@gmail.com', eventId=evento['id'], body=evento).execute()
             print("DEBUG: Evento actualizado exitosamente con hora México.")
             return True
             
