@@ -33,26 +33,43 @@ def limpiar_telefono(tel):
 
 # --- LÓGICA DE ACTUALIZACIÓN DE CALENDARIO ---
 def marcar_evento(telefono_recibido, accion):
-    # Normalizamos el teléfono (usamos los últimos 10 dígitos)
-    tel_buscado = limpiar_telefono(telefono_recibido)[-10:] 
+    # 1. Normalizar el teléfono
+    tel_buscado = limpiar_telefono(telefono_recibido)[-10:]
+    print(f"DEBUG: Buscando cita para el teléfono: {tel_buscado}")
     
-    # ... (Aquí va tu lógica de autenticación de Google Calendar, tal como la tenías)
-    # Ejemplo: calendario = build('calendar', 'v3', credentials=creds)
+    # 2. Definir rango (ajustado a hoy)
+    import datetime
+    # Asegúrate de que las fechas sean correctas
+    hoy = datetime.datetime.utcnow() 
+    inicio = hoy.replace(hour=0, minute=0, second=0, microsecond=0)
+    fin = hoy.replace(hour=23, minute=59, second=59, microsecond=0)
     
-    eventos = calendario.getEvents(start, end)
+    print(f"DEBUG: Buscando eventos entre {inicio} y {fin}")
+    
+    eventos = calendario.getEvents(inicio, fin)
+    
+    if not eventos:
+        print("DEBUG: ¡No se encontraron eventos hoy en ese rango!")
+        return False
+        
+    print(f"DEBUG: Se encontraron {len(eventos)} eventos hoy.")
     
     for evento in eventos:
         titulo = evento.summary
-        # Normalizamos el título del evento
         titulo_limpio = limpiar_telefono(titulo)
+        print(f"DEBUG: Analizando evento: '{titulo}' -> Limpio: '{titulo_limpio}'")
         
-        # Comparamos si los últimos 10 dígitos están en el título
         if tel_buscado in titulo_limpio:
-            # Quitamos marcas previas para evitar duplicados visuales
+            print(f"DEBUG: ¡MATCH! Encontrado evento para {tel_buscado}")
+            # Quitamos marcas previas
             nuevo_titulo = f"{titulo.replace(' ✅', '').replace(' ❌', '')} ✅"
-            evento.update({'summary': nuevo_titulo})
-            return True
+            print(f"DEBUG: Cambiando título a: {nuevo_titulo}")
             
+            evento.update({'summary': nuevo_titulo})
+            print("DEBUG: Evento actualizado exitosamente.")
+            return True
+    
+    print("DEBUG: Fin del ciclo. Ningún evento coincidió con el teléfono.")
     return False
 # --- RUTAS ---
 @app.route('/recordatorios', methods=['POST'])
