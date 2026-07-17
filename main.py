@@ -3,7 +3,7 @@ import re
 import os
 import json
 import requests
-from datetime import datetime
+import datetime
 from flask import Flask, request, jsonify
 from googleapiclient.discovery import build
 from google.oauth2.service_account import Credentials
@@ -16,12 +16,8 @@ META_TOKEN = "EAAXdEhil3gMBR0uiujuuAvK5nqaj8A9boQQ7Yd59u0Xa8GF86XVtJl2k7EWLecDPk
 VERIFY_TOKEN = "TOKEN_SECRETO_META" 
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
-def limpiar_telefono(cadena):
-    # Extrae solo los dígitos (del 0 al 9)
-    return re.sub(r'\D', '', str(cadena))
-
+# --- INICIALIZACIÓN ---
 def obtener_servicio_calendar():
-    # Leemos el JSON desde la variable de entorno que configuramos en Render
     creds_json = os.environ.get('GOOGLE_TOKEN_JSON')
     if not creds_json:
         raise ValueError("Error: No se encontró la variable GOOGLE_CREDENTIALS")
@@ -29,54 +25,49 @@ def obtener_servicio_calendar():
     creds = Credentials.from_service_account_info(info, scopes=SCOPES)
     return build('calendar', 'v3', credentials=creds)
 
-def limpiar_telefono(tel):
-    return "52" + "".join(filter(str.isdigit, str(tel)))[-10:]
+# Inicializamos el calendario globalmente para usarlo en marcar_evento
+calendario = obtener_servicio_calendar()
 
-# --- LÓGICA DE ACTUALIZACIÓN DE CALENDARIO ---
+def limpiar_telefono(tel):
+    # Estandariza a 10 dígitos (últimos 10 números del string)
+    return "".join(filter(str.isdigit, str(tel)))[-10:]
+
+# --- LÓGICA DE ACTUALIZACIÓN ---
 def marcar_evento(telefono_recibido, accion):
-    # 1. Normalizar el teléfono
-    tel_buscado = limpiar_telefono(telefono_recibido)[-10:]
+    tel_buscado = limpiar_telefono(telefono_recibido)
     print(f"DEBUG: Buscando cita para el teléfono: {tel_buscado}")
     
-    # 2. Definir rango (ajustado a hoy)
-    import datetime
-    # Asegúrate de que las fechas sean correctas
     hoy = datetime.datetime.utcnow() 
-    inicio = hoy.replace(hour=0, minute=0, second=0, microsecond=0)
-    fin = hoy.replace(hour=23, minute=59, second=59, microsecond=0)
+    inicio = hoy.replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + 'Z'
+    fin = hoy.replace(hour=23, minute=59, second=59, microsecond=0).isoformat() + 'Z'
     
-    print(f"DEBUG: Buscando eventos entre {inicio} y {fin}")
-    
-    eventos = calendario.getEvents(inicio, fin)
+    # Usamos el objeto calendario inicializado globalmente
+    eventos_result = calendario.events().list(calendarId='gerard24zam@gmail.com', timeMin=inicio, timeMax=fin).execute()
+    eventos = eventos_result.get('items', [])
     
     if not eventos:
-        print("DEBUG: ¡No se encontraron eventos hoy en ese rango!")
+        print("DEBUG: ¡No se encontraron eventos hoy!")
         return False
         
-    print(f"DEBUG: Se encontraron {len(eventos)} eventos hoy.")
-    
     for evento in eventos:
-        titulo = evento.summary
+        titulo = evento.get('summary', '')
         titulo_limpio = limpiar_telefono(titulo)
-        print(f"DEBUG: Analizando evento: '{titulo}' -> Limpio: '{titulo_limpio}'")
+        print(f"DEBUG: Analizando: '{titulo}' -> Limpio: '{titulo_limpio}'")
         
         if tel_buscado in titulo_limpio:
-            print(f"DEBUG: ¡MATCH! Encontrado evento para {tel_buscado}")
-            # Quitamos marcas previas
+            print(f"DEBUG: ¡MATCH! Evento para {tel_buscado}")
             nuevo_titulo = f"{titulo.replace(' ✅', '').replace(' ❌', '')} ✅"
-            print(f"DEBUG: Cambiando título a: {nuevo_titulo}")
-            
-            evento.update({'summary': nuevo_titulo})
-            print("DEBUG: Evento actualizado exitosamente.")
+            evento['summary'] = nuevo_titulo
+            calendario.events().update(calendarId='gerard24zam@gmail.com', eventId=evento['id'], body=evento).execute()
+            print("DEBUG: Evento actualizado.")
             return True
-    
-    print("DEBUG: Fin del ciclo. Ningún evento coincidió con el teléfono.")
     return False
+
 # --- RUTAS ---
 @app.route('/recordatorios', methods=['POST'])
 def detonar_recordatorio():
     data = request.get_json()
-    telefono = limpiar_telefono(data.get('telefono'))
+    telefono = data.get('telefono') # Ya no limpiamos aquí, asumimos formato E.164
     payload = {
         "messaging_product": "whatsapp", "to": telefono, "type": "template",
         "template": {
@@ -94,26 +85,31 @@ def detonar_recordatorio():
 
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
-    # ESTO DEBE SER LO PRIMERO QUE HACE LA FUNCIÓN
-    print("--- RECIBÍ UNA PETICIÓN EN EL WEBHOOK ---")
-    sys.stdout.flush() 
-
     if request.method == 'GET':
-        if request.args.get("hub.verify_token") == "TOKEN_SECRETO_META":
+        if request.args.get("hub.verify_token") == VERIFY_TOKEN:
             return request.args.get("hub.challenge")
         return "Forbidden", 403
     
-    # Aquí capturamos lo que llega
-    try:
-        data = request.get_json()
-        print(f"DATOS RECIBIDOS: {data}")
-        sys.stdout.flush()
-    except Exception as e:
-        print(f"ERROR AL LEER JSON: {e}")
-        sys.stdout.flush()
-        return "Error", 400
+    data = request.get_json()
+    print(f"DATOS RECIBIDOS: {data}")
+    sys.stdout.flush()
 
-    # ... el resto de tu lógica sigue aquí abajo ...
+    # Lógica de detección de mensajes
+    if 'messages' in data['entry'][0]['changes'][0]['value']:
+        msg = data['entry'][0]['changes'][0]['value']['messages'][0]
+        msg_type = msg.get('type')
+        telefono_cliente = msg.get('from')
+        texto = ""
+
+        if msg_type == 'text':
+            texto = msg.get('text', {}).get('body', '').lower()
+        elif msg_type == 'button':
+            texto = msg.get('button', {}).get('text', '').lower()
+
+        if "si" in texto or "confirmo" in texto:
+            print(f"DEBUG: Usuario confirmó: {telefono_cliente}")
+            marcar_evento(telefono_cliente, 'confirmar')
+
     return "OK", 200
 
 if __name__ == '__main__':
