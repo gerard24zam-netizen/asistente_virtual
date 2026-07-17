@@ -42,7 +42,7 @@ def marcar_evento(telefono_recibido, accion):
     fin = hoy.replace(hour=23, minute=59, second=59, microsecond=0).isoformat() + 'Z'
     
     # Usamos el objeto calendario inicializado globalmente
-    eventos_result = calendario.events().list(calendarId='gerard24zam@gmail.com', timeMin=inicio, timeMax=fin).execute()
+    eventos_result = calendario.events().list(calendarId='primary', timeMin=inicio, timeMax=fin).execute()
     eventos = eventos_result.get('items', [])
     
     if not eventos:
@@ -58,7 +58,7 @@ def marcar_evento(telefono_recibido, accion):
             print(f"DEBUG: ¡MATCH! Evento para {tel_buscado}")
             nuevo_titulo = f"{titulo.replace(' ✅', '').replace(' ❌', '')} ✅"
             evento['summary'] = nuevo_titulo
-            calendario.events().update(calendarId='gerard24zam@gmail.com', eventId=evento['id'], body=evento).execute()
+            calendario.events().update(calendarId='primary', eventId=evento['id'], body=evento).execute()
             print("DEBUG: Evento actualizado.")
             return True
     return False
