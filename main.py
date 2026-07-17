@@ -1,3 +1,4 @@
+import re
 import os
 import json
 import requests
@@ -14,6 +15,10 @@ META_TOKEN = "EAAXdEhil3gMBR0uiujuuAvK5nqaj8A9boQQ7Yd59u0Xa8GF86XVtJl2k7EWLecDPk
 VERIFY_TOKEN = "TOKEN_SECRETO_META" 
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
+def limpiar_telefono(cadena):
+    # Extrae solo los dígitos (del 0 al 9)
+    return re.sub(r'\D', '', str(cadena))
+
 def obtener_servicio_calendar():
     # Leemos el JSON desde la variable de entorno que configuramos en Render
     creds_json = os.environ.get('GOOGLE_TOKEN_JSON')
@@ -28,34 +33,27 @@ def limpiar_telefono(tel):
 
 # --- LÓGICA DE ACTUALIZACIÓN DE CALENDARIO ---
 def marcar_evento(telefono_recibido, accion):
-    try:
-        service = obtener_servicio_calendar()
-        ahora = datetime.utcnow().isoformat() + 'Z'
+    # Normalizamos el teléfono (usamos los últimos 10 dígitos)
+    tel_buscado = limpiar_telefono(telefono_recibido)[-10:] 
+    
+    # ... (Aquí va tu lógica de autenticación de Google Calendar, tal como la tenías)
+    # Ejemplo: calendario = build('calendar', 'v3', credentials=creds)
+    
+    eventos = calendario.getEvents(start, end)
+    
+    for evento in eventos:
+        titulo = evento.summary
+        # Normalizamos el título del evento
+        titulo_limpio = limpiar_telefono(titulo)
         
-        # Buscamos eventos desde hoy
-        eventos_result = service.events().list(calendarId='primary', timeMin=ahora,
-                                               singleEvents=True, orderBy='startTime').execute()
-        eventos = eventos_result.get('items', [])
-
-        for evento in eventos:
-            descripcion = evento.get('description', '')
-            if telefono_recibido in descripcion:
-                titulo_actual = evento.get('summary', '')
-                
-                # Lógica para confirmar (✅) o reagendar (❌)
-                if accion == 'confirmar' and "✅" not in titulo_actual:
-                    evento['summary'] = f"✅ {titulo_actual}"
-                elif accion == 'reagendar' and "❌" not in titulo_actual:
-                    evento['summary'] = f"❌ {titulo_actual}"
-                else:
-                    return False # Ya estaba marcado o no aplica
-
-                service.events().update(calendarId='primary', eventId=evento['id'], body=evento).execute()
-                return True
-    except Exception as e:
-        print(f"Error al actualizar calendario: {e}")
+        # Comparamos si los últimos 10 dígitos están en el título
+        if tel_buscado in titulo_limpio:
+            # Quitamos marcas previas para evitar duplicados visuales
+            nuevo_titulo = f"{titulo.replace(' ✅', '').replace(' ❌', '')} ✅"
+            evento.update({'summary': nuevo_titulo})
+            return True
+            
     return False
-
 # --- RUTAS ---
 @app.route('/recordatorios', methods=['POST'])
 def detonar_recordatorio():
