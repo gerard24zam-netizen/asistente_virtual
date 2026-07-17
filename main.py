@@ -6,8 +6,8 @@ import json
 import requests
 import datetime
 from flask import Flask, request, jsonify
-from googleapiclient.discovery import build
 from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
 
 app = Flask(__name__)
 
@@ -138,6 +138,22 @@ def webhook():
             marcar_evento(telefono_cliente, 'confirmar')
 
     return "OK", 200
+
+@app.route('/debug_calendarios', methods=['GET'])
+def debug_calendarios():
+    # Carga tus credenciales
+    credenciales = service_account.Credentials.from_service_account_file('credentials.json')
+    correo_asistente = credenciales.service_account_email
+    
+    lista = calendario.calendarList().list().execute()
+    items = lista.get('items', [])
+    resultado = f"Correo del asistente: {correo_asistente}\n\nCALENDARIOS ENCONTRADOS:\n"
+    
+    for cal in items:
+        resultado += f"Nombre: {cal.get('summary')} | ID: {cal.get('id')}\n"
+    
+    print(f"DEBUG: {resultado}")
+    return resultado
 
 if __name__ == '__main__':
     app.run(port=5000)
