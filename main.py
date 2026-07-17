@@ -33,7 +33,8 @@ def limpiar_telefono(tel):
 
 # --- LÓGICA DE ACTUALIZACIÓN ---
 def marcar_evento(telefono_recibido, accion):
-    tel_buscado = limpiar_telefono(telefono_recibido)
+    # Solo limpiamos el teléfono que recibimos del mensaje
+    tel_buscado = "".join(filter(str.isdigit, str(telefono_recibido)))[-10:]
     print(f"DEBUG: Buscando cita para el teléfono: {tel_buscado} (Acción: {accion})")
     
     zona_mexico = pytz.timezone('America/Mexico_City')
@@ -44,7 +45,6 @@ def marcar_evento(telefono_recibido, accion):
     inicio = inicio_mexico.astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
     fin = fin_mexico.astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
     
-    # Usamos tu correo directamente como ID
     eventos_result = calendario.events().list(calendarId='gerard24zam@gmail.com', timeMin=inicio, timeMax=fin).execute()
     eventos = eventos_result.get('items', [])
     
@@ -56,14 +56,14 @@ def marcar_evento(telefono_recibido, accion):
         
     for evento in eventos:
         titulo = evento.get('summary', '')
-        descripcion = evento.get('description', '') # Obtenemos la descripción
+        descripcion = evento.get('description', '')
         
-        # Limpiamos tanto título como descripción para buscar el teléfono
-        titulo_limpio = limpiar_telefono(titulo)
-        descripcion_limpia = limpiar_telefono(descripcion)
+        # Combinamos todo en un solo bloque de texto para buscar
+        texto_completo = (titulo + " " + descripcion)
         
-        if tel_buscado in titulo_limpio or tel_buscado in descripcion_limpia:
-            if simbolo in titulo: # Si ya tiene la marca, no hacemos nada
+        # Usamos re.search para buscar el número exacto, ignorando fechas y otros números
+        if re.search(tel_buscado, texto_completo):
+            if simbolo in titulo:
                 print("DEBUG: El evento ya estaba marcado.")
                 return True
             
@@ -71,11 +71,10 @@ def marcar_evento(telefono_recibido, accion):
             nuevo_titulo = f"{titulo.replace(' ✅', '').replace(' ❌', '').strip()} {simbolo}"
             evento['summary'] = nuevo_titulo
             calendario.events().update(calendarId='gerard24zam@gmail.com', eventId=evento['id'], body=evento).execute()
-            print(f"DEBUG: Evento actualizado en {'título' if tel_buscado in titulo_limpio else 'descripción'}")
+            print(f"DEBUG: Evento actualizado correctamente.")
             return True
             
     return False
-
 # --- RUTAS ---
 
 @app.route('/debug_calendarios', methods=['GET'])
