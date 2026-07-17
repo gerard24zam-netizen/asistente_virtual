@@ -6,7 +6,7 @@ import json
 import requests
 import datetime
 from flask import Flask, request, jsonify
-from google.oauth2.service_account import Credentials
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
 app = Flask(__name__)
@@ -23,7 +23,7 @@ def obtener_servicio_calendar():
     if not creds_json:
         raise ValueError("Error: No se encontró la variable GOOGLE_CREDENTIALS")
     info = json.loads(creds_json)
-    creds = Credentials.from_service_account_info(info, scopes=SCOPES)
+    creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
     return build('calendar', 'v3', credentials=creds)
 
 # Inicializamos el calendario globalmente para usarlo en marcar_evento
@@ -34,8 +34,6 @@ def limpiar_telefono(tel):
     return "".join(filter(str.isdigit, str(tel)))[-10:]
 
 # --- LÓGICA DE ACTUALIZACIÓN ---
-import pytz # Asegúrate de tener esta librería
-
 def marcar_evento(telefono_recibido, accion):
     tel_buscado = limpiar_telefono(telefono_recibido)
     print(f"DEBUG: Buscando cita para el teléfono: {tel_buscado}")
@@ -78,23 +76,29 @@ def marcar_evento(telefono_recibido, accion):
             
     print("DEBUG: Ningún evento coincidió con el teléfono en el rango horario de México.")
     return False
+
 # --- RUTAS ---
 
 @app.route('/debug_calendarios', methods=['GET'])
 def debug_calendarios():
-    # Esta función imprimirá los nombres y IDs de todos tus calendarios
+    # Usamos las mismas credenciales cargadas al inicio para mostrar el correo
+    # Esto evita problemas de archivos que no existen en el servidor
+    correo_asistente = "Revisa tu variable GOOGLE_TOKEN_JSON en Render"
+    
     lista = calendario.calendarList().list().execute()
     items = lista.get('items', [])
-    resultado = ""
+    resultado = f"Correo del asistente: {correo_asistente}\n\nCALENDARIOS ENCONTRADOS:\n"
+    
     for cal in items:
         resultado += f"Nombre: {cal.get('summary')} | ID: {cal.get('id')}\n"
-    print(f"DEBUG: LISTA DE CALENDARIOS:\n{resultado}")
+    
+    print(f"DEBUG: {resultado}")
     return resultado
 
 @app.route('/recordatorios', methods=['POST'])
 def detonar_recordatorio():
     data = request.get_json()
-    telefono = data.get('telefono') # Ya no limpiamos aquí, asumimos formato E.164
+    telefono = data.get('telefono')
     payload = {
         "messaging_product": "whatsapp", "to": telefono, "type": "template",
         "template": {
@@ -121,7 +125,6 @@ def webhook():
     print(f"DATOS RECIBIDOS: {data}")
     sys.stdout.flush()
 
-    # Lógica de detección de mensajes
     if 'messages' in data['entry'][0]['changes'][0]['value']:
         msg = data['entry'][0]['changes'][0]['value']['messages'][0]
         msg_type = msg.get('type')
@@ -138,22 +141,6 @@ def webhook():
             marcar_evento(telefono_cliente, 'confirmar')
 
     return "OK", 200
-
-@app.route('/debug_calendarios', methods=['GET'])
-def debug_calendarios():
-    # Carga tus credenciales
-    credenciales = service_account.Credentials.from_service_account_file('credentials.json')
-    correo_asistente = credenciales.service_account_email
-    
-    lista = calendario.calendarList().list().execute()
-    items = lista.get('items', [])
-    resultado = f"Correo del asistente: {correo_asistente}\n\nCALENDARIOS ENCONTRADOS:\n"
-    
-    for cal in items:
-        resultado += f"Nombre: {cal.get('summary')} | ID: {cal.get('id')}\n"
-    
-    print(f"DEBUG: {resultado}")
-    return resultado
 
 if __name__ == '__main__':
     app.run(port=5000)
