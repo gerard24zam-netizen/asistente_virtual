@@ -1,3 +1,4 @@
+import pytz
 import sys
 import re
 import os
@@ -33,36 +34,50 @@ def limpiar_telefono(tel):
     return "".join(filter(str.isdigit, str(tel)))[-10:]
 
 # --- LÓGICA DE ACTUALIZACIÓN ---
+import pytz # Asegúrate de tener esta librería
+
 def marcar_evento(telefono_recibido, accion):
     tel_buscado = limpiar_telefono(telefono_recibido)
     print(f"DEBUG: Buscando cita para el teléfono: {tel_buscado}")
     
-    hoy = datetime.datetime.utcnow() 
-    inicio = hoy.replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + 'Z'
-    fin = hoy.replace(hour=23, minute=59, second=59, microsecond=0).isoformat() + 'Z'
+    # 1. Definir la zona horaria de México
+    zona_mexico = pytz.timezone('America/Mexico_City')
     
-    # Usamos el objeto calendario inicializado globalmente
+    # 2. Obtener el inicio y fin del día en hora México
+    ahora_mexico = datetime.datetime.now(zona_mexico)
+    inicio_mexico = ahora_mexico.replace(hour=0, minute=0, second=0, microsecond=0)
+    fin_mexico = ahora_mexico.replace(hour=23, minute=59, second=59, microsecond=0)
+    
+    # 3. Convertir a UTC (formato ISO con 'Z') para Google Calendar
+    inicio = inicio_mexico.astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
+    fin = fin_mexico.astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
+    
+    print(f"DEBUG: Buscando eventos hoy en México entre {inicio} y {fin}")
+    
     eventos_result = calendario.events().list(calendarId='primary', timeMin=inicio, timeMax=fin).execute()
     eventos = eventos_result.get('items', [])
     
     if not eventos:
-        print("DEBUG: ¡No se encontraron eventos hoy!")
+        print("DEBUG: ¡No se encontraron eventos hoy en el calendario de México!")
         return False
         
     for evento in eventos:
         titulo = evento.get('summary', '')
         titulo_limpio = limpiar_telefono(titulo)
-        print(f"DEBUG: Analizando: '{titulo}' -> Limpio: '{titulo_limpio}'")
         
         if tel_buscado in titulo_limpio:
-            print(f"DEBUG: ¡MATCH! Evento para {tel_buscado}")
+            if "✅" in titulo:
+                print("DEBUG: El evento ya estaba marcado.")
+                return True
+                
             nuevo_titulo = f"{titulo.replace(' ✅', '').replace(' ❌', '')} ✅"
             evento['summary'] = nuevo_titulo
             calendario.events().update(calendarId='primary', eventId=evento['id'], body=evento).execute()
-            print("DEBUG: Evento actualizado.")
+            print("DEBUG: Evento actualizado exitosamente con hora México.")
             return True
+            
+    print("DEBUG: Ningún evento coincidió con el teléfono en el rango horario de México.")
     return False
-
 # --- RUTAS ---
 @app.route('/recordatorios', methods=['POST'])
 def detonar_recordatorio():
