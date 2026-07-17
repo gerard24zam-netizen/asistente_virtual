@@ -79,6 +79,18 @@ def marcar_evento(telefono_recibido, accion):
     print("DEBUG: Ningún evento coincidió con el teléfono en el rango horario de México.")
     return False
 # --- RUTAS ---
+
+@app.route('/debug_calendarios', methods=['GET'])
+def debug_calendarios():
+    # Esta función imprimirá los nombres y IDs de todos tus calendarios
+    lista = calendario.calendarList().list().execute()
+    items = lista.get('items', [])
+    resultado = ""
+    for cal in items:
+        resultado += f"Nombre: {cal.get('summary')} | ID: {cal.get('id')}\n"
+    print(f"DEBUG: LISTA DE CALENDARIOS:\n{resultado}")
+    return resultado
+
 @app.route('/recordatorios', methods=['POST'])
 def detonar_recordatorio():
     data = request.get_json()
