@@ -145,6 +145,10 @@ def marcar_evento(telefono_recibido, accion):
     return "default"
 
 # --- RUTAS ---
+@app.route('/')
+def home():
+    return "Bot de citas multi-tenant activo y funcionando correctamente", 200
+
 @app.route('/recordatorios', methods=['POST'])
 def detonar_recordatorio():
     data = request.get_json()
