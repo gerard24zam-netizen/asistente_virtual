@@ -33,22 +33,26 @@ CONTACTOS_DOCTORES = {
 
 def get_doctor_data(doctor_id="default"):
     """
-    Busca al doctor en Supabase. Si falla o no existe, usa el diccionario de respaldo.
+    Busca al doctor en Supabase y normaliza las llaves para evitar errores.
     """
     if supabase:
         try:
             response = supabase.table("Doctores").select("*").eq("id", doctor_id).execute()
             if response.data and len(response.data) > 0:
+                row = response.data[0]
                 print(f"DEBUG: Datos obtenidos de Supabase para {doctor_id}")
-                return response.data[0]
+                return {
+                    "nombre": row.get("nombre") or row.get("name", "Psic. Gerardo Zamora"),
+                    "wa_link": row.get("wa_link") or row.get("link", "https://wa.me/527226293417")
+                }
         except Exception as e:
             print(f"DEBUG: Error consultando Supabase: {e}")
     
-    # Respaldo automático
+    # Respaldo automático local
     print(f"DEBUG: Usando respaldo local para {doctor_id}")
     return CONTACTOS_DOCTORES.get(doctor_id, CONTACTOS_DOCTORES["default"])
 
-# --- FUNCIÓN DE ENVÍO CENTRALIZADA (INTACTA) ---
+# --- FUNCIÓN DE ENVÍO CENTRALIZADA ---
 def enviar_mensaje(telefono, tipo, contenido=None, template_params=None):
     headers = {"Authorization": f"Bearer {META_TOKEN}", "Content-Type": "application/json"}
     url = f"https://graph.facebook.com/v17.0/{TELEFONO_ID_META}/messages"
@@ -70,7 +74,7 @@ def enviar_mensaje(telefono, tipo, contenido=None, template_params=None):
     print(f"DEBUG: Enviado a {telefono}. Status: {resp.status_code}")
     return resp
 
-# --- LÓGICA DE ACTUALIZACIÓN DE CALENDARIO (INTACTA) ---
+# --- LÓGICA DE ACTUALIZACIÓN DE CALENDARIO ---
 def obtener_servicio_calendar():
     creds_json = os.environ.get('GOOGLE_TOKEN_JSON')
     if not creds_json: raise ValueError("Error: No se encontró la variable GOOGLE_CREDENTIALS")
@@ -92,25 +96,53 @@ def marcar_evento(telefono_recibido, accion):
     inicio = inicio_mexico.astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
     fin = fin_mexico.astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
     
-    eventos_result = calendario.events().list(calendarId='gerard24zam@gmail.com', timeMin=inicio, timeMax=fin).execute()
-    eventos = eventos_result.get('items', [])
-    
     simbolo = "✅" if accion == 'confirmar' else "❌"
+    
+    # 1. Obtenemos todos los doctores dados de alta en Supabase
+    doctores_registrados = []
+    if supabase:
+        try:
+            res = supabase.table("Doctores").select("*").execute()
+            if res.data:
+                doctores_registrados = res.data
+        except Exception as e:
+            print(f"DEBUG: Error obteniendo lista de doctores: {e}")
+            
+    # Respaldo por si Supabase no responde
+    if not doctores_registrados:
+        doctores_registrados = [{
+            "id": "default",
+            "calendar_id": "gerard24zam@gmail.com"
+        }]
         
-    for evento in eventos:
-        titulo = evento.get('summary', '')
-        descripcion = evento.get('description', '')
-        descripcion_sin_emails = re.sub(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', '', descripcion)
-        texto_completo = f"{titulo} {descripcion_sin_emails}"
-        numeros_en_evento = limpiar_telefono(texto_completo)
+    # 2. Buscamos en el calendario de cada doctor registrado en la BD
+    for doc in doctores_registrados:
+        cal_id = doc.get("calendar_id") or doc.get("email") or "gerard24zam@gmail.com"
+        doc_id_actual = doc.get("id", "default")
         
-        if tel_buscado in numeros_en_evento:
-            if simbolo in titulo: return True
-            nuevo_titulo = f"{titulo.replace(' ✅', '').replace(' ❌', '').strip()} {simbolo}"
-            evento['summary'] = nuevo_titulo
-            calendario.events().update(calendarId='gerard24zam@gmail.com', eventId=evento['id'], body=evento).execute()
-            return True
-    return False
+        try:
+            eventos_result = calendario.events().list(calendarId=cal_id, timeMin=inicio, timeMax=fin).execute()
+            eventos = eventos_result.get('items', [])
+            
+            for evento in eventos:
+                titulo = evento.get('summary', '')
+                descripcion = evento.get('description', '')
+                descripcion_sin_emails = re.sub(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', '', descripcion)
+                texto_completo = f"{titulo} {descripcion_sin_emails}"
+                numeros_en_evento = limpiar_telefono(texto_completo)
+                
+                if tel_buscado in numeros_en_evento:
+                    if simbolo in titulo: 
+                        return doc_id_actual
+                    nuevo_titulo = f"{titulo.replace(' ✅', '').replace(' ❌', '').strip()} {simbolo}"
+                    evento['summary'] = nuevo_titulo
+                    calendario.events().update(calendarId=cal_id, eventId=evento['id'], body=evento).execute()
+                    print(f"DEBUG: Evento actualizado en el calendario de: {cal_id}")
+                    return doc_id_actual
+        except Exception as e:
+            print(f"DEBUG: No se pudo revisar el calendario {cal_id}: {e}")
+            
+    return "default"
 
 # --- RUTAS ---
 @app.route('/recordatorios', methods=['POST'])
@@ -143,11 +175,12 @@ def webhook():
             marcar_evento(telefono_cliente, 'confirmar')
             
         elif "no" in texto or "reagendar" in texto:
-            marcar_evento(telefono_cliente, 'reagendar')
+            # marcar_evento localiza el evento y nos devuelve el ID del doctor propietario
+            doc_id_encontrado = marcar_evento(telefono_cliente, 'reagendar')
             
-            # --- CAMBIO QUIRÚRGICO SAAS ---
-            # Aquí consultamos Supabase (o el respaldo si fallara) de manera dinámica
-            doc = get_doctor_data("default") 
+            # Consultamos los datos de ese doctor en Supabase de forma dinámica
+            doc = get_doctor_data(doc_id_encontrado)
+            
             texto_reagendar = f"Entendido. Para reagendar, comunícate con {doc['nombre']} aquí: {doc['wa_link']}"
             enviar_mensaje(telefono_cliente, "text", contenido=texto_reagendar)
             
