@@ -8,6 +8,7 @@ import datetime
 from flask import Flask, request, jsonify
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from supabase import create_client
 
 app = Flask(__name__)
 
@@ -17,15 +18,37 @@ META_TOKEN = "EAAXdEhil3gMBR0uiujuuAvK5nqaj8A9boQQ7Yd59u0Xa8GF86XVtJl2k7EWLecDPk
 VERIFY_TOKEN = "TOKEN_SECRETO_META" 
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
-# --- CONFIGURACIÓN SAAS (DATOS) ---
+# --- CONFIGURACIÓN SUPABASE & SAAS ---
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
+
+# Diccionario de respaldo (Red de seguridad por si Supabase no responde)
 CONTACTOS_DOCTORES = {
     "default": {
         "nombre": "Psic. Gerardo Zamora",
-        "link": "https://wa.me/527226293417"
+        "wa_link": "https://wa.me/527226293417"
     }
 }
 
-# --- FUNCIÓN DE ENVÍO CENTRALIZADA (NUEVA Y SEGURA) ---
+def get_doctor_data(doctor_id="default"):
+    """
+    Busca al doctor en Supabase. Si falla o no existe, usa el diccionario de respaldo.
+    """
+    if supabase:
+        try:
+            response = supabase.table("Doctores").select("*").eq("id", doctor_id).execute()
+            if response.data and len(response.data) > 0:
+                print(f"DEBUG: Datos obtenidos de Supabase para {doctor_id}")
+                return response.data[0]
+        except Exception as e:
+            print(f"DEBUG: Error consultando Supabase: {e}")
+    
+    # Respaldo automático
+    print(f"DEBUG: Usando respaldo local para {doctor_id}")
+    return CONTACTOS_DOCTORES.get(doctor_id, CONTACTOS_DOCTORES["default"])
+
+# --- FUNCIÓN DE ENVÍO CENTRALIZADA (INTACTA) ---
 def enviar_mensaje(telefono, tipo, contenido=None, template_params=None):
     headers = {"Authorization": f"Bearer {META_TOKEN}", "Content-Type": "application/json"}
     url = f"https://graph.facebook.com/v17.0/{TELEFONO_ID_META}/messages"
@@ -47,7 +70,7 @@ def enviar_mensaje(telefono, tipo, contenido=None, template_params=None):
     print(f"DEBUG: Enviado a {telefono}. Status: {resp.status_code}")
     return resp
 
-# --- LÓGICA DE ACTUALIZACIÓN (INTACTA) ---
+# --- LÓGICA DE ACTUALIZACIÓN DE CALENDARIO (INTACTA) ---
 def obtener_servicio_calendar():
     creds_json = os.environ.get('GOOGLE_TOKEN_JSON')
     if not creds_json: raise ValueError("Error: No se encontró la variable GOOGLE_CREDENTIALS")
@@ -77,7 +100,6 @@ def marcar_evento(telefono_recibido, accion):
     for evento in eventos:
         titulo = evento.get('summary', '')
         descripcion = evento.get('description', '')
-        # DEPURACIÓN DE CORREO INTACTA:
         descripcion_sin_emails = re.sub(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', '', descripcion)
         texto_completo = f"{titulo} {descripcion_sin_emails}"
         numeros_en_evento = limpiar_telefono(texto_completo)
@@ -115,16 +137,18 @@ def webhook():
     if 'messages' in data['entry'][0]['changes'][0]['value']:
         msg = data['entry'][0]['changes'][0]['value']['messages'][0]
         telefono_cliente = msg.get('from')
-        texto = msg.get('button', {}).get('text', '').lower() if msg.get('type') == 'button' else msg.get('text', {}).get('body', '').lower()
+        texto = msg.get('button', {}).get('text', '').lower() if msg.get('type'] == 'button' else msg.get('text', {}).get('body', '').lower()
 
         if "si" in texto or "confirmo" in texto:
             marcar_evento(telefono_cliente, 'confirmar')
             
         elif "no" in texto or "reagendar" in texto:
             marcar_evento(telefono_cliente, 'reagendar')
-            # AQUÍ ENVIAMOS EL TEXTO DE REAGENDAR USANDO LA NUEVA FUNCIÓN
-            doc = CONTACTOS_DOCTORES["default"]
-            texto_reagendar = f"Entendido. Para reagendar, comunícate con {doc['nombre']} aquí: {doc['link']}"
+            
+            # --- CAMBIO QUIRÚRGICO SAAS ---
+            # Aquí consultamos Supabase (o el respaldo si fallara) de manera dinámica
+            doc = get_doctor_data("default") 
+            texto_reagendar = f"Entendido. Para reagendar, comunícate con {doc['nombre']} aquí: {doc['wa_link']}"
             enviar_mensaje(telefono_cliente, "text", contenido=texto_reagendar)
             
     return "OK", 200
