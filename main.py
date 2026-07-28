@@ -55,7 +55,7 @@ def get_doctor_data(doctor_id="default"):
     print(f"DEBUG: Usando respaldo local para {doctor_id}")
     return CONTACTOS_DOCTORES.get(doctor_id, CONTACTOS_DOCTORES["default"])
 
-# --- FUNCIÓN DE ENVÍO CENTRALIZADA ---
+# --- FUNCIÓN DE ENVÍO CENTRALIZADA (BLINDADA) ---
 def enviar_mensaje(telefono, tipo, contenido=None, template_params=None):
     headers = {"Authorization": f"Bearer {META_TOKEN}", "Content-Type": "application/json"}
     url = f"https://graph.facebook.com/v17.0/{TELEFONO_ID_META}/messages"
@@ -73,9 +73,18 @@ def enviar_mensaje(telefono, tipo, contenido=None, template_params=None):
             "messaging_product": "whatsapp", "to": telefono, "text": {"body": contenido}
         }
         
-    resp = requests.post(url, json=payload, headers=headers)
-    print(f"DEBUG: Enviado a {telefono}. Status: {resp.status_code}")
-    return resp
+    try:
+        resp = requests.post(url, json=payload, headers=headers)
+        print(f"DEBUG: Enviado a {telefono}. Status: {resp.status_code}")
+        if resp.status_code >= 400:
+            print(f"DEBUG: Respuesta de Meta (Error/Rechazo): {resp.text}")
+        return resp
+    except requests.exceptions.RequestException as e:
+        print(f"DEBUG: Error de conexión al enviar mensaje a Meta: {e}")
+        return None
+    except Exception as e:
+        print(f"DEBUG: Error inesperado al enviar mensaje: {e}")
+        return None
 
 # --- LÓGICA DE ACTUALIZACIÓN DE CALENDARIO ---
 def obtener_servicio_calendar():
