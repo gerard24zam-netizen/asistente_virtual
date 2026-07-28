@@ -177,7 +177,15 @@ def webhook():
         texto = msg.get('button', {}).get('text', '').lower() if msg.get('type') == 'button' else msg.get('text', {}).get('body', '').lower()
 
         if "si" in texto or "confirmo" in texto:
-            marcar_evento(telefono_cliente, 'confirmar')
+            # 1. Marcamos el evento con palomita y obtenemos el ID del doctor propietario
+            doc_id_encontrado = marcar_evento(telefono_cliente, 'confirmar')
+            
+            # 2. Consultamos sus datos para extraer su nombre y su link de WhatsApp de forma dinámica
+            doc = get_doctor_data(doc_id_encontrado)
+            
+            # 3. Enviamos el mensaje de confirmación personalizado al paciente
+            texto_confirmacion = f"Perfecto, hemos confirmado tu cita para el día de hoy con {doc['nombre']}. Dudas o aclaraciones, comunícate aquí: {doc['wa_link']}"
+            enviar_mensaje(telefono_cliente, "text", contenido=texto_confirmacion)
             
         elif "no" in texto or "reagendar" in texto:
             # marcar_evento localiza el evento y devuelve el ID del doctor propietario
