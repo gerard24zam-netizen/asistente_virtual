@@ -27,13 +27,14 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABAS
 CONTACTOS_DOCTORES = {
     "default": {
         "nombre": "Psic. Gerardo Zamora",
-        "wa_link": "https://wa.me/527226293417"
+        "wa_link": "https://wa.me/527226293417",
+        "ocupation": "Atención Psicológica"
     }
 }
 
 def get_doctor_data(doctor_id="default"):
     """
-    Busca al doctor en Supabase y normaliza las llaves para evitar errores.
+    Busca al doctor en Supabase incluyendo nombre, link de WhatsApp y ocupación.
     Si falla, utiliza el respaldo local automáticamente.
     """
     if supabase:
@@ -43,8 +44,9 @@ def get_doctor_data(doctor_id="default"):
                 row = response.data[0]
                 print(f"DEBUG: Datos obtenidos de Supabase para {doctor_id}")
                 return {
-                    "nombre": row.get("nombre") or row.get("name", "Psic. Gerardo Zamora"),
-                    "wa_link": row.get("wa_link") or row.get("link", "https://wa.me/527226293417")
+                    "nombre": row.get("name") or row.get("nombre", "Psic. Gerardo Zamora"),
+                    "wa_link": row.get("wa_link") or row.get("link", "https://wa.me/527226293417"),
+                    "ocupation": row.get("ocupation", "Atención Psicológica")
                 }
         except Exception as e:
             print(f"DEBUG: Error consultando Supabase: {e}")
@@ -156,11 +158,19 @@ def detonar_recordatorio():
     tel_limpio = "".join(filter(str.isdigit, str(data.get('telefono'))))
     telefono = "52" + tel_limpio if len(tel_limpio) == 10 else tel_limpio
     
+    # Obtenemos el identificador del doctor si viene en la petición, de lo contrario usa 'default'
+    doctor_id = data.get('doctor_id', 'default')
+    doc_data = get_doctor_data(doctor_id)
+    
+    # Estricto orden de las 5 variables configuradas en la plantilla de Meta:
     params = [
-        {"type": "text", "text": data.get('nombre')},
-        {"type": "text", "text": data.get('fecha')},
-        {"type": "text", "text": data.get('hora')}
+        {"type": "text", "text": data.get('nombre')},          # {{1}} Nombre del paciente
+        {"type": "text", "text": doc_data.get('ocupation')},   # {{2}} Tipo de consulta / Ocupación desde Supabase
+        {"type": "text", "text": data.get('fecha')},          # {{3}} Fecha de la cita
+        {"type": "text", "text": data.get('hora')},           # {{4}} Hora de la cita
+        {"type": "text", "text": doc_data.get('nombre')}       # {{5}} Nombre del doctor desde Supabase
     ]
+    
     enviar_mensaje(telefono, "template", template_params=params)
     return jsonify({"status": 200})
 
@@ -174,7 +184,7 @@ def webhook():
     if 'messages' in data['entry'][0]['changes'][0]['value']:
         msg = data['entry'][0]['changes'][0]['value']['messages'][0]
         telefono_cliente = msg.get('from')
-        texto = msg.get('button', {}).get('text', '').lower() if msg.get('type') == 'button' else msg.get('text', {}).get('body', '').lower()
+        texto = msg.get('button', {}).get('text', '').lower() if msg.get('type'] == 'button' else msg.get('text', {}).get('body', '').lower()
 
         if "si" in texto or "confirmo" in texto:
             # 1. Marcamos el evento con palomita y obtenemos el ID del doctor propietario
