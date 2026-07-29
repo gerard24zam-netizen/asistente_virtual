@@ -5,6 +5,7 @@ import os
 import json
 import requests
 import datetime
+import threading
 from flask import Flask, request, jsonify
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -237,11 +238,9 @@ def detonar_recordatorio():
     tel_limpio = "".join(filter(str.isdigit, str(data.get('telefono'))))
     telefono = "52" + tel_limpio if len(tel_limpio) == 10 else tel_limpio
     
-    # Obtenemos el identificador del doctor si viene en la petición, de lo contrario usa 'default'
     doctor_id = data.get('doctor_id', 'default')
     doc_data = get_doctor_data(doctor_id)
     
-    # Estricto orden de las 5 variables configuradas en la plantilla de Meta:
     params = [
         {"type": "text", "text": data.get('nombre')},          # {{1}} Nombre del paciente
         {"type": "text", "text": doc_data.get('ocupation')},   # {{2}} Tipo de consulta / Ocupación desde Supabase
@@ -253,6 +252,34 @@ def detonar_recordatorio():
     enviar_mensaje(telefono, "template", template_params=params)
     return jsonify({"status": 200})
 
+def procesar_webhook_asincrono(data):
+    """Función que ejecuta toda la lógica pesada en segundo plano para evitar bloqueos en el Webhook"""
+    try:
+        if 'messages' in data['entry'][0]['changes'][0]['value']:
+            msg = data['entry'][0]['changes'][0]['value']['messages'][0]
+            telefono_cliente = msg.get('from')
+            texto = msg.get('button', {}).get('text', '').lower() if msg.get('type') == 'button' else msg.get('text', {}).get('body', '').lower()
+
+            if "si" in texto or "confirmo" in texto:
+                doc_id_encontrado = marcar_evento(telefono_cliente, 'confirmar')
+                doc = get_doctor_data(doc_id_encontrado)
+                
+                texto_confirmacion = f"Perfecto, hemos confirmado tu cita para el día de hoy con {doc['nombre']}. Dudas o aclaraciones, comunícate aquí: {doc['wa_link']}"
+                enviar_mensaje(telefono_cliente, "text", contenido=texto_confirmacion)
+                
+                notificar_resumen_doctor(doc_id_encontrado)
+                
+            elif "no" in texto or "reagendar" in texto:
+                doc_id_encontrado = marcar_evento(telefono_cliente, 'reagendar')
+                doc = get_doctor_data(doc_id_encontrado)
+                
+                texto_reagendar = f"Entendido. Para reagendar, comunícate con {doc['nombre']} aquí: {doc['wa_link']}"
+                enviar_mensaje(telefono_cliente, "text", contenido=texto_reagendar)
+                
+                notificar_resumen_doctor(doc_id_encontrado)
+    except Exception as e:
+        print(f"DEBUG: Error procesando webhook en segundo plano: {e}")
+
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
     if request.method == 'GET':
@@ -260,38 +287,11 @@ def webhook():
         return "Forbidden", 403
     
     data = request.get_json()
-    if 'messages' in data['entry'][0]['changes'][0]['value']:
-        msg = data['entry'][0]['changes'][0]['value']['messages'][0]
-        telefono_cliente = msg.get('from')
-        texto = msg.get('button', {}).get('text', '').lower() if msg.get('type') == 'button' else msg.get('text', {}).get('body', '').lower()
-
-        if "si" in texto or "confirmo" in texto:
-            # 1. Marcamos el evento con palomita y obtenemos el ID del doctor propietario
-            doc_id_encontrado = marcar_evento(telefono_cliente, 'confirmar')
-            
-            # 2. Consultamos sus datos para extraer su nombre y su link de WhatsApp de forma dinámica
-            doc = get_doctor_data(doc_id_encontrado)
-            
-            # 3. Enviamos el mensaje de confirmación personalizado al paciente
-            texto_confirmacion = f"Perfecto, hemos confirmado tu cita para el día de hoy con {doc['nombre']}. Dudas o aclaraciones, comunícate aquí: {doc['wa_link']}"
-            enviar_mensaje(telefono_cliente, "text", contenido=texto_confirmacion)
-            
-            # 4. Notificamos al doctor con el resumen actualizado
-            notificar_resumen_doctor(doc_id_encontrado)
-            
-        elif "no" in texto or "reagendar" in texto:
-            # marcar_evento localiza el evento y devuelve el ID del doctor propietario
-            doc_id_encontrado = marcar_evento(telefono_cliente, 'reagendar')
-            
-            # Consultamos los datos de ese doctor en Supabase para obtener su enlace de WhatsApp personalizado
-            doc = get_doctor_data(doc_id_encontrado)
-            
-            texto_reagendar = f"Entendido. Para reagendar, comunícate con {doc['nombre']} aquí: {doc['wa_link']}"
-            enviar_mensaje(telefono_cliente, "text", contenido=texto_reagendar)
-            
-            # Notificamos al doctor con el resumen actualizado
-            notificar_resumen_doctor(doc_id_encontrado)
-            
+    
+    # Lanzamos el proceso en un hilo secundario y respondemos 200 OK inmediatamente a Meta
+    hilo = threading.Thread(target=procesar_webhook_asincrono, args=(data,))
+    hilo.start()
+    
     return "OK", 200
 
 if __name__ == '__main__':
