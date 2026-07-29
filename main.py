@@ -156,6 +156,76 @@ def marcar_evento(telefono_recibido, accion):
             
     return "default"
 
+def notificar_resumen_doctor(doc_id):
+    doc_row = None
+    if supabase:
+        try:
+            res = supabase.table("Doctores").select("*").eq("id", doc_id).execute()
+            if res.data:
+                doc_row = res.data[0]
+        except Exception as e:
+            print(f"DEBUG: Error obteniendo doctor para resumen: {e}")
+    
+    if not doc_row:
+        wa_link = CONTACTOS_DOCTORES.get("default", {}).get("wa_link", "https://wa.me/527226293417")
+        cal_id = "gerard24zam@gmail.com"
+    else:
+        wa_link = doc_row.get("wa_link") or doc_row.get("link", "https://wa.me/527226293417")
+        cal_id = doc_row.get("calendar_id") or doc_row.get("email") or "gerard24zam@gmail.com"
+    
+    tel_doctor = "".join(filter(str.isdigit, str(wa_link)))
+    if not tel_doctor:
+        return
+
+    zona_mexico = pytz.timezone('America/Mexico_City')
+    ahora_mexico = datetime.datetime.now(zona_mexico)
+    inicio_mexico = ahora_mexico.replace(hour=0, minute=0, second=0, microsecond=0)
+    fin_mexico = ahora_mexico.replace(hour=23, minute=59, second=59, microsecond=0)
+    inicio = inicio_mexico.astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
+    fin = fin_mexico.astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
+
+    try:
+        eventos_result = calendario.events().list(calendarId=cal_id, timeMin=inicio, timeMax=fin).execute()
+        eventos = eventos_result.get('items', [])
+        
+        confirmados = []
+        cancelados = []
+
+        for evento in eventos:
+            titulo = evento.get('summary', '')
+            start_dt = evento.get('start', {}).get('dateTime', '')
+            hora_str = ""
+            if start_dt:
+                try:
+                    dt_obj = datetime.datetime.fromisoformat(start_dt).astimezone(zona_mexico)
+                    hora_str = dt_obj.strftime('%H:%M')
+                except:
+                    pass
+            
+            nombre_paciente = titulo.replace('✅', '').replace('❌', '').strip()
+
+            if '✅' in titulo:
+                confirmados.append(f"- {nombre_paciente} a las {hora_str} hrs")
+            elif '❌' in titulo:
+                cancelados.append(f"- {nombre_paciente} a las {hora_str} hrs")
+
+        mensaje = f"📊 *Actualización de agenda (Resumen)*:\n\n"
+        mensaje += f"✅ *Confirmados ({len(confirmados)}):*\n"
+        if confirmados:
+            mensaje += "\n".join(confirmados) + "\n"
+        else:
+            mensaje += "Ninguno aún\n"
+        
+        mensaje += f"\n❌ *Cancelados / Reagendados ({len(cancelados)}):*\n"
+        if cancelados:
+            mensaje += "\n".join(cancelados)
+        else:
+            mensaje += "Ninguno"
+
+        enviar_mensaje(tel_doctor, "text", contenido=mensaje)
+    except Exception as e:
+        print(f"DEBUG: Error al enviar resumen al doctor: {e}")
+
 # --- RUTAS ---
 @app.route('/')
 def home():
@@ -206,6 +276,9 @@ def webhook():
             texto_confirmacion = f"Perfecto, hemos confirmado tu cita para el día de hoy con {doc['nombre']}. Dudas o aclaraciones, comunícate aquí: {doc['wa_link']}"
             enviar_mensaje(telefono_cliente, "text", contenido=texto_confirmacion)
             
+            # 4. Notificamos al doctor con el resumen actualizado
+            notificar_resumen_doctor(doc_id_encontrado)
+            
         elif "no" in texto or "reagendar" in texto:
             # marcar_evento localiza el evento y devuelve el ID del doctor propietario
             doc_id_encontrado = marcar_evento(telefono_cliente, 'reagendar')
@@ -215,6 +288,9 @@ def webhook():
             
             texto_reagendar = f"Entendido. Para reagendar, comunícate con {doc['nombre']} aquí: {doc['wa_link']}"
             enviar_mensaje(telefono_cliente, "text", contenido=texto_reagendar)
+            
+            # Notificamos al doctor con el resumen actualizado
+            notificar_resumen_doctor(doc_id_encontrado)
             
     return "OK", 200
 
