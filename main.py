@@ -24,14 +24,6 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 
-CONTACTOS_DOCTORES = {
-    "default": {
-        "nombre": "Psic. Gerardo Zamora",
-        "wa_link": "https://wa.me/527226293417",
-        "ocupation": "Atención Psicológica"
-    }
-}
-
 def log_debug(mensaje):
     """Función para forzar que los prints salgan en los logs de Gunicorn/Render al instante"""
     print(f"DEBUG: {mensaje}", flush=True)
