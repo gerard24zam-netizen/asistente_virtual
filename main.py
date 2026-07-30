@@ -93,7 +93,6 @@ def limpiar_telefono(tel):
     return "".join(filter(str.isdigit, str(tel)))[-10:]
 
 def registrar_recordatorio_activo(telefono, doctor_id):
-    """Guarda qué doctor le escribió a qué teléfono con control de errores de Supabase"""
     if not supabase or not telefono or not doctor_id:
         return
         
@@ -105,7 +104,7 @@ def registrar_recordatorio_activo(telefono, doctor_id):
             "updated_at": datetime.datetime.now().isoformat()
         }, on_conflict="telefono").execute()
         
-        log_debug(f"Memoria actualizada: Teléfono {tel_limpio} asociado al doctor_id {doctor_id}")
+        log_debug(f"Memoria actualizada: Teléfono {tel_limpio} asociado estrictamente al doctor_id {doctor_id}")
         
     except Exception as e:
         error_str = str(e)
@@ -131,9 +130,51 @@ def marcar_evento(telefono_recibido, accion):
             res_mem = supabase.table("recordatorios_activos").select("doctor_id").eq("telefono", tel_buscado).execute()
             if res_mem.data and len(res_mem.data) > 0:
                 doctor_sugerido_id = res_mem.data[0].get("doctor_id")
-        except Exception:
-            pass
+                log_debug(f"Doctor sugerido recuperado de memoria para el teléfono {tel_buscado}: '{doctor_sugerido_id}'")
+        except Exception as e:
+            log_debug(f"Error consultando recordatorios_activos: {e}")
 
+    # 1. Priorizar búsqueda directa en el calendario del doctor sugerido en memoria
+    if doctor_sugerido_id:
+        doc_sugerido = get_doctor_data(doctor_sugerido_id)
+        cal_id_sugerido = doc_sugerido.get("calendar_id") or doc_sugerido.get("email")
+        if cal_id_sugerido:
+            try:
+                log_debug(f"Buscando cita primero en el calendario del doctor sugerido: {doctor_sugerido_id} ({cal_id_sugerido})")
+                eventos_result = calendario.events().list(calendarId=cal_id_sugerido, timeMin=inicio, timeMax=fin).execute()
+                eventos = eventos_result.get('items', [])
+                
+                for evento in eventos:
+                    titulo = evento.get('summary', '')
+                    descripcion = evento.get('description', '')
+                    descripcion_sin_emails = re.sub(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', '', descripcion)
+                    texto_completo = f"{titulo} {descripcion_sin_emails}"
+                    numeros_en_evento = limpiar_telefono(texto_completo)
+                    
+                    if tel_buscado in numeros_en_evento:
+                        log_debug(f"¡Cita encontrada exitosamente en el calendario del doctor sugerido '{doctor_sugerido_id}'!")
+                        if simbolo in titulo: 
+                            return doctor_sugerido_id
+                        
+                        titulo_limpio = titulo.replace(' ✅', '').replace(' ❌', '').replace('✅', '').replace('❌', '').strip()
+                        nuevo_titulo = f"{titulo_limpio} {simbolo}"
+                        
+                        try:
+                            calendario.events().patch(
+                                calendarId=cal_id_sugerido, 
+                                eventId=evento['id'], 
+                                body={'summary': nuevo_titulo}
+                            ).execute()
+                            log_debug(f"Evento actualizado con '{simbolo}' en el calendario de: {cal_id_sugerido}")
+                        except Exception as patch_err:
+                            log_debug(f"ERROR AL ACTUALIZAR CALENDARIO ({cal_id_sugerido}): {patch_err}")
+                        
+                        return doctor_sugerido_id
+            except Exception as e:
+                log_debug(f"No se pudo revisar el calendario sugerido {cal_id_sugerido}: {e}")
+
+    # 2. Respaldo: Buscar en todos los demás calendarios registrados si no se encontró en el sugerido
+    log_debug("Buscando en el resto de los calendarios registrados como respaldo...")
     doctores_registrados = []
     if supabase:
         try:
@@ -141,23 +182,17 @@ def marcar_evento(telefono_recibido, accion):
             if res.data:
                 doctores_registrados = res.data
         except Exception as e:
-            log_debug(f"Error obteniendo lista de doctores para marcar evento: {e}")
+            log_debug(f"Error obteniendo lista de doctores: {e}")
             
     if not doctores_registrados:
-        doctores_registrados = [{
-            "id": "default",
-            "calendar_id": "gerard24zam@gmail.com"
-        }]
-    
-    if doctor_sugerido_id:
-        doctores_registrados = sorted(doctores_registrados, key=lambda x: 0 if str(x.get("id")) == str(doctor_sugerido_id) else 1)
+        doctores_registrados = [{"id": "default", "calendar_id": "gerard24zam@gmail.com"}]
     
     for doc in doctores_registrados:
         cal_id = doc.get("calendar_id") or doc.get("email")
         doc_id_actual = doc.get("id", "default")
         
-        if not cal_id:
-            continue
+        if not cal_id or (doctor_sugerido_id and str(doc_id_actual) == str(doctor_sugerido_id)):
+            continue # Ya se revisó arriba
         
         try:
             eventos_result = calendario.events().list(calendarId=cal_id, timeMin=inicio, timeMax=fin).execute()
@@ -171,7 +206,7 @@ def marcar_evento(telefono_recibido, accion):
                 numeros_en_evento = limpiar_telefono(texto_completo)
                 
                 if tel_buscado in numeros_en_evento:
-                    log_debug(f"¡Cita encontrada en el calendario del doctor ID: '{doc_id_actual}' ({cal_id})!")
+                    log_debug(f"¡Cita encontrada en calendario de respaldo del doctor ID: '{doc_id_actual}' ({cal_id})!")
                     if simbolo in titulo: 
                         return doc_id_actual
                     
@@ -192,7 +227,7 @@ def marcar_evento(telefono_recibido, accion):
         except Exception as e:
             log_debug(f"No se pudo revisar el calendario {cal_id}: {e}")
             
-    log_debug("ADVERTENCIA: No se encontró coincidencia del teléfono en ningún calendario registrado.")
+    log_debug("ADVERTENCIA: No se encontró coincidencia del teléfono en ningún calendario.")
     return None
 
 def notificar_resumen_doctor(doc_id):
@@ -238,7 +273,10 @@ def notificar_resumen_doctor(doc_id):
                 except:
                     pass
             
-            nombre_paciente = titulo.replace('✅', '').replace('❌', '').strip()
+            nombre_raw = titulo.replace('✅', '').replace('❌', '')
+            nombre_limpio = re.sub(r'\d{10}', '', nombre_raw)
+            nombre_limpio = re.sub(r'[-–—_•.]', ' ', nombre_limpio)
+            nombre_paciente = re.sub(r'\s+', ' ', nombre_limpio).strip() or "Paciente"
 
             if '✅' in titulo:
                 confirmados.append(f"- {nombre_paciente} a las {hora_str} hrs")
@@ -371,9 +409,11 @@ def procesar_calendarios_diarios():
                     except:
                         hora_str = "00:00"
 
-                # Blindaje estricto de parámetros contra vacíos (Evita error #131008 de Meta)
-                nombre_raw = titulo.split(" ")[0] if titulo else ""
-                p_nombre = nombre_raw.strip() if nombre_raw and nombre_raw.strip() else "Paciente"
+                nombre_limpio = re.sub(r'\d{10}', '', titulo)
+                nombre_limpio = re.sub(r'[-–—_•.]', ' ', nombre_limpio)
+                nombre_limpio = re.sub(r'\s+', ' ', nombre_limpio).strip()
+                p_nombre = nombre_limpio if nombre_limpio else "Paciente"
+
                 p_ocupacion = str(doc_data.get('ocupation') or '').strip() or "Atención Psicológica"
                 p_fecha = "hoy"
                 p_hora = hora_str if hora_str else "00:00"
