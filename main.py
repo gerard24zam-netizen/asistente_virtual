@@ -92,6 +92,20 @@ calendario = obtener_servicio_calendar()
 def limpiar_telefono(tel):
     return "".join(filter(str.isdigit, str(tel)))[-10:]
 
+def registrar_recordatorio_activo(telefono, doctor_id):
+    """Guarda qué doctor le escribió a qué teléfono para evitar confusiones"""
+    if supabase and telefono and doctor_id:
+        try:
+            tel_limpio = limpiar_telefono(telefono)
+            supabase.table("recordatorios_activos").upsert({
+                "telefono": tel_limpio,
+                "doctor_id": str(doctor_id),
+                "updated_at": datetime.datetime.now().isoformat()
+            }, on_conflict="telefono").execute()
+            log_debug(f"Memoria actualizada: Teléfono {tel_limpio} asociado al doctor_id {doctor_id}")
+        except Exception as e:
+            log_debug(f"No se pudo guardar recordatorio activo en Supabase (la tabla se creará o ignorará si no existe): {e}")
+
 def marcar_evento(telefono_recibido, accion):
     tel_buscado = limpiar_telefono(telefono_recibido)
     zona_mexico = pytz.timezone('America/Mexico_City')
@@ -103,6 +117,17 @@ def marcar_evento(telefono_recibido, accion):
     
     simbolo = "✅" if accion == 'confirmar' else "❌"
     
+    # 1. INTELIGENCIA DE ASOCIACIÓN: Consultar si recordamos qué doctor le escribió
+    doctor_sugerido_id = None
+    if supabase:
+        try:
+            res_mem = supabase.table("recordatorios_activos").select("doctor_id").eq("telefono", tel_buscado).execute()
+            if res_mem.data and len(res_mem.data) > 0:
+                doctor_sugerido_id = res_mem.data[0].get("doctor_id")
+                log_debug(f"Memoria encontrada: El teléfono {tel_buscado pertenece al doctor_id '{doctor_sugerido_id}'")
+        except Exception as e:
+            log_debug(f"Error consultando memoria de recordatorios activos: {e}")
+
     doctores_registrados = []
     if supabase:
         try:
@@ -118,8 +143,9 @@ def marcar_evento(telefono_recibido, accion):
             "calendar_id": "gerard24zam@gmail.com"
         }]
     
-    # ORDEN CRUCIAL: Revisar primero a los especialistas y dejar "default" al final
-    doctores_registrados = sorted(doctores_registrados, key=lambda x: 1 if x.get("id") == "default" else 0)
+    # ORDEN INTELIGENTE: Si tenemos al doctor sugerido por memoria, lo ponemos PRIMERO ABSOLUTO
+    if doctor_sugerido_id:
+        doctores_registrados = sorted(doctores_registrados, key=lambda x: 0 if str(x.get("id")) == str(doctor_sugerido_id) else 1)
     
     for doc in doctores_registrados:
         cal_id = doc.get("calendar_id") or doc.get("email")
@@ -140,7 +166,7 @@ def marcar_evento(telefono_recibido, accion):
                 numeros_en_evento = limpiar_telefono(texto_completo)
                 
                 if tel_buscado in numeros_en_evento:
-                    log_debug(f"¡Cita encontrada en el calendario del especialista ID: '{doc_id_actual}' ({cal_id})!")
+                    log_debug(f"¡Cita encontrada en el calendario correcto del doctor ID: '{doc_id_actual}' ({cal_id})!")
                     if simbolo in titulo: 
                         return doc_id_actual
                     
@@ -245,6 +271,9 @@ def detonar_recordatorio():
     doctor_id = data.get('doctor_id', 'default')
     doc_data = get_doctor_data(doctor_id)
     
+    # Guardar en memoria qué doctor envió este recordatorio
+    registrar_recordatorio_activo(telefono, doctor_id)
+    
     params = [
         {"type": "text", "text": str(data.get('nombre') or 'Paciente')},
         {"type": "text", "text": str(doc_data.get('ocupation') or 'Atención Psicológica')},
@@ -312,6 +341,9 @@ def procesar_calendarios_diarios():
                 telefono_encontrado = match.group(0)
                 telefono_meta = "52" + telefono_encontrado
 
+                # Registrar memoria en proceso diario también
+                registrar_recordatorio_activo(telefono_meta, doc_id)
+
                 start_dt = evento.get('start', {}).get('dateTime', '')
                 hora_str = ""
                 if start_dt:
@@ -353,7 +385,7 @@ def procesar_webhook_asincrono(data):
         if 'messages' in data['entry'][0]['changes'][0]['value']:
             msg = data['entry'][0]['changes'][0]['value']['messages'][0]
             telefono_cliente = msg.get('from')
-            texto = msg.get('button', {}).get('text', '').lower() if msg.get('type') == 'button' else msg.get('text', {}).get('body', '').lower()
+            texto = msg.get('button', {}).get('text', '').lower() if msg.get('type'] == 'button' else msg.get('text', {}).get('body', '').lower()
 
             log_debug(f"Mensaje recibido de cliente {telefono_cliente}: '{texto}'")
 
@@ -394,4 +426,3 @@ def webhook():
 
 if __name__ == '__main__':
     app.run(port=5000)
-    
