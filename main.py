@@ -36,16 +36,15 @@ def get_doctor_data(doctor_id="default"):
                 row = response.data[0]
                 log_debug(f"¡Doctor encontrado en Supabase!: {row}")
                 return {
-                    "id": row.get("id"),
-                    "nombre": row.get("name") or row.get("nombre", "Psic. Gerardo Zamora"),
-                    "wa_link": row.get("wa_link") or row.get("link", "https://wa.me/527226293417"),
-                    "ocupation": row.get("ocupation", "Atención Psicológica"),
-                    "calendar_id": row.get("calendar_id") or row.get("email")
+                    "id": str(row.get("id", "default")),
+                    "nombre": str(row.get("name") or row.get("nombre", "Psic. Gerardo Zamora")).strip(),
+                    "wa_link": str(row.get("wa_link") or row.get("link", "https://wa.me/527226293417")).strip(),
+                    "ocupation": str(row.get("ocupation", "Atención Psicológica")).strip(),
+                    "calendar_id": str(row.get("calendar_id") or row.get("email", "gerard24zam@gmail.com")).strip()
                 }
         except Exception as e:
             log_debug(f"Error consultando Supabase para doctor_id {doctor_id}: {e}")
             
-    # Respaldo estricto solo si falla la red
     return {
         "id": "default",
         "nombre": "Psic. Gerardo Zamora",
@@ -119,7 +118,6 @@ def marcar_evento(telefono_recibido, accion):
             "calendar_id": "gerard24zam@gmail.com"
         }]
         
-    # Búsqueda multi-tenant estricta ligada al ID de Supabase
     for doc in doctores_registrados:
         cal_id = doc.get("calendar_id") or doc.get("email")
         doc_id_actual = doc.get("id", "default")
@@ -154,7 +152,7 @@ def marcar_evento(telefono_recibido, accion):
                         ).execute()
                         log_debug(f"Evento actualizado con '{simbolo}' en el calendario de: {cal_id}")
                     except Exception as patch_err:
-                        log_debug(f"ERROR AL ACTUALIZAR CALENDARIO ({cal_id}). Asegúrate de dar permisos de escritura a la Cuenta de Servicio: {patch_err}")
+                        log_debug(f"ERROR AL ACTUALIZAR CALENDARIO ({cal_id}): {patch_err}")
                     
                     return doc_id_actual
         except Exception as e:
@@ -245,15 +243,17 @@ def detonar_recordatorio():
     doc_data = get_doctor_data(doctor_id)
     
     params = [
-        {"type": "text", "text": data.get('nombre')},
-        {"type": "text", "text": doc_data.get('ocupation')},
-        {"type": "text", "text": data.get('fecha')},
-        {"type": "text", "text": data.get('hora')},
-        {"type": "text", "text": doc_data.get('nombre')}
+        {"type": "text", "text": str(data.get('nombre') or 'Paciente')},
+        {"type": "text", "text": str(doc_data.get('ocupation') or 'Atención Psicológica')},
+        {"type": "text", "text": str(data.get('fecha') or 'hoy')},
+        {"type": "text", "text": str(data.get('hora') or '00:00')},
+        {"type": "text", "text": str(doc_data.get('nombre') or 'Doctor')}
     ]
     
-    enviar_mensaje(telefono, "template", template_params=params)
-    return jsonify({"status": 200})
+    resp = enviar_mensaje(telefono, "template", template_params=params)
+    if resp and resp.status_code < 400:
+        return jsonify({"status": 200})
+    return jsonify({"status": 400, "error": "Error al enviar mensaje por Meta"})
 
 def procesar_calendarios_diarios():
     log_debug("Iniciando el proceso diario masivo de calendarios...")
@@ -318,18 +318,23 @@ def procesar_calendarios_diarios():
                     except:
                         hora_str = "00:00"
 
-                nombre = titulo.split(" ")[0] if titulo else "Paciente"
+                nombre_paciente = str(titulo.split(" ")[0]).strip() if titulo else "Paciente"
+                ocupacion_val = str(doc_data.get('ocupation') or 'Atención Psicológica').strip()
+                nombre_doc = str(doc_data.get('nombre') or 'Doctor').strip()
 
                 params = [
-                    {"type": "text", "text": nombre},
-                    {"type": "text", "text": doc_data.get('ocupation')},
+                    {"type": "text", "text": nombre_paciente},
+                    {"type": "text", "text": ocupacion_val},
                     {"type": "text", "text": "hoy"},
-                    {"type": "text", "text": hora_str},
-                    {"type": "text", "text": doc_data.get('nombre')}
+                    {"type": "text", "text": hora_str if hora_str else "00:00"},
+                    {"type": "text", "text": nombre_doc}
                 ]
 
-                enviar_mensaje(telefono_meta, "template", template_params=params)
-                log_debug(f"Recordatorio enviado exitosamente a {telefono_meta} para el doctor {doc_id}")
+                resp = enviar_mensaje(telefono_meta, "template", template_params=params)
+                if resp and resp.status_code < 400:
+                    log_debug(f"Recordatorio enviado exitosamente a {telefono_meta} para el doctor {doc_id}")
+                else:
+                    log_debug(f"Fallo al enviar recordatorio a {telefono_meta} para el doctor {doc_id}")
 
         except Exception as err_cal:
             log_debug(f"Error procesando calendario {cal_id}: {err_cal}")
@@ -345,7 +350,7 @@ def procesar_webhook_asincrono(data):
         if 'messages' in data['entry'][0]['changes'][0]['value']:
             msg = data['entry'][0]['changes'][0]['value']['messages'][0]
             telefono_cliente = msg.get('from')
-            texto = msg.get('button', {}).get('text', '').lower() if msg.get('type') == 'button' else msg.get('text', {}).get('body', '').lower()
+            texto = msg.get('button', {}).get('text', '').lower() if msg.get('type'] == 'button' else msg.get('text', {}).get('body', '').lower()
 
             log_debug(f"Mensaje recibido de cliente {telefono_cliente}: '{texto}'")
 
