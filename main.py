@@ -123,7 +123,6 @@ def marcar_evento(telefono_recibido, accion):
             "calendar_id": "gerard24zam@gmail.com"
         }]
         
-    # Recorremos todos los calendarios para ubicar quirúrgicamente el evento correcto
     for doc in doctores_registrados:
         cal_id = doc.get("calendar_id") or doc.get("email")
         doc_id_actual = doc.get("id", "default")
@@ -150,8 +149,13 @@ def marcar_evento(telefono_recibido, accion):
                     titulo_limpio = titulo.replace(' ✅', '').replace(' ❌', '').replace('✅', '').replace('❌', '').strip()
                     nuevo_titulo = f"{titulo_limpio} {simbolo}"
                     
-                    evento['summary'] = nuevo_titulo
-                    calendario.events().update(calendarId=cal_id, eventId=evento['id'], body=evento).execute()
+                    # USO DE PATCH PARA ACTUALIZACIÓN QUIRÚRGICA DEL TÍTULO
+                    calendario.events().patch(
+                        calendarId=cal_id, 
+                        eventId=evento['id'], 
+                        body={'summary': nuevo_titulo}
+                    ).execute()
+                    
                     log_debug(f"Evento actualizado exitosamente con '{simbolo}' en el calendario de: {cal_id}")
                     return doc_id_actual
         except Exception as e:
@@ -179,6 +183,8 @@ def notificar_resumen_doctor(doc_id):
         cal_id = doc_row.get("calendar_id") or doc_row.get("email") or "gerard24zam@gmail.com"
     
     tel_doctor = "".join(filter(str.isdigit, str(wa_link)))
+    log_debug(f"Resumen configurado para doctor_id '{doc_id}' -> WhatsApp destino: {tel_doctor} (Calendario: {cal_id})")
+
     if not tel_doctor:
         log_debug("El teléfono del doctor está vacío, no se puede enviar resumen.")
         return
@@ -348,7 +354,7 @@ def procesar_webhook_asincrono(data):
         if 'messages' in data['entry'][0]['changes'][0]['value']:
             msg = data['entry'][0]['changes'][0]['value']['messages'][0]
             telefono_cliente = msg.get('from')
-            texto = msg.get('button', {}).get('text', '').lower() if msg.get('type') == 'button' else msg.get('text', {}).get('body', '').lower()
+            texto = msg.get('button', {}).get('text', '').lower() if msg.get('type'] == 'button' else msg.get('text', {}).get('body', '').lower()
 
             log_debug(f"Mensaje recibido de cliente {telefono_cliente}: '{texto}'")
 
