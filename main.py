@@ -100,7 +100,6 @@ def registrar_recordatorio_activo(telefono, doctor_id):
         return
         
     tel_limpio = limpiar_telefono(telefono)
-    # Guardado primario en memoria RAM del servidor (Inmediato y sin bloqueos RLS)
     RECORDATORIOS_ACTIVOS_MEMORIA[tel_limpio] = str(doctor_id)
     log_debug(f"Memoria RAM actualizada: Teléfono {tel_limpio} asociado al doctor_id {doctor_id}")
 
@@ -115,6 +114,47 @@ def registrar_recordatorio_activo(telefono, doctor_id):
         except Exception as e:
             log_debug(f"Aviso Supabase (recordatorios_activos): {e}")
 
+def extraer_datos_evento(evento, doc_default_id):
+    """Extrae inteligentemente el nombre del paciente y determina el doctor correcto."""
+    titulo = evento.get('summary', '')
+    descripcion = evento.get('description', '')
+    
+    # 1. Extraer nombre del paciente buscando en asistentes (attendees) o descripción
+    p_nombre = "Paciente"
+    attendees = evento.get('attendees', [])
+    for att in attendees:
+        display_name = att.get('displayName', '')
+        if display_name and not any(k in display_name.lower() for k in ['celia', 'gerardo', 'psic', 'doctor', 'dra', 'dr', 'atención', 'atencion']):
+            p_nombre = display_name.strip()
+            break
+            
+    if p_nombre == "Paciente" and descripcion:
+        match_nombre = re.search(r'(?:nombre|paciente|client[e]?):\s*([^\n\r]+)', descripcion, re.IGNORECASE)
+        if match_nombre:
+            p_nombre = match_nombre.group(1).strip()
+            
+    # Si sigue sin encontrarse, limpiar el título evitando nombres de páginas de reserva
+    if p_nombre == "Paciente":
+        nombre_limpio = titulo
+        for termino in ['atención psicológica', 'atencion psicologica', 'celia reyes', 'gerardo zamora']:
+            nombre_limpio = re.sub(re.escape(termino), '', nombre_limpio, flags=re.IGNORECASE)
+        nombre_limpio = re.sub(r'\d{10}', '', nombre_limpio)
+        nombre_limpio = re.sub(r'[-–—_•()\[\]]', ' ', nombre_limpio)
+        nombre_limpio = re.sub(r'\s+', ' ', nombre_limpio).strip()
+        if nombre_limpio and len(nombre_limpio) > 2:
+            p_nombre = nombre_limpio
+
+    # 2. Determinar el doctor correcto mediante palabras clave en el evento
+    doc_id_final = doc_default_id
+    texto_completo = f"{titulo} {descripcion}".lower()
+    
+    if "gerardo" in texto_completo and "celia" not in texto_completo:
+        doc_id_final = "default"
+    elif "celia" in texto_completo and "gerardo" not in texto_completo:
+        doc_id_final = "Psic_Celia_Reyes"
+
+    return p_nombre, doc_id_final
+
 def marcar_evento(telefono_recibido, accion):
     tel_buscado = limpiar_telefono(telefono_recibido)
     zona_mexico = pytz.timezone('America/Mexico_City')
@@ -126,7 +166,6 @@ def marcar_evento(telefono_recibido, accion):
     
     simbolo = "✅" if accion == 'confirmar' else "❌"
     
-    # 1. Recuperar doctor_id priorizando la memoria RAM local, con respaldo en Supabase
     doctor_sugerido_id = "default"
     if tel_buscado in RECORDATORIOS_ACTIVOS_MEMORIA:
         doctor_sugerido_id = RECORDATORIOS_ACTIVOS_MEMORIA[tel_buscado]
@@ -141,12 +180,10 @@ def marcar_evento(telefono_recibido, accion):
         except Exception as e:
             log_debug(f"Error consultando recordatorios_activos: {e}")
 
-    # 2. Obtener los datos y calendario de ESE doctor exclusivamente
     doc_data = get_doctor_data(doctor_sugerido_id)
     cal_id = doc_data.get("calendar_id") or doc_data.get("email")
     
     if not cal_id:
-        log_debug(f"Error: No se encontró calendar_id para el doctor {doctor_sugerido_id}")
         return None
 
     try:
@@ -183,12 +220,10 @@ def marcar_evento(telefono_recibido, accion):
     except Exception as e:
         log_debug(f"Error al revisar el calendario {cal_id}: {e}")
         
-    log_debug(f"ADVERTENCIA: No se encontró coincidencia del teléfono {tel_buscado} en el calendario del doctor {doctor_sugerido_id}.")
     return None
 
 def notificar_resumen_doctor(doc_id):
     if not doc_id:
-        log_debug("doc_id recibido es nulo, no se puede enviar resumen.")
         return
 
     log_debug(f"Iniciando notificación de resumen exclusivamente para el doctor_id: '{doc_id}'")
@@ -198,10 +233,7 @@ def notificar_resumen_doctor(doc_id):
     cal_id = doc_data.get("calendar_id", "gerard24zam@gmail.com")
     
     tel_doctor = "".join(filter(str.isdigit, str(wa_link)))
-    log_debug(f"Resumen dirigido a '{doc_data['nombre']}' -> WhatsApp destino: {tel_doctor} (Calendario: {cal_id})")
-
     if not tel_doctor:
-        log_debug("El teléfono del doctor está vacío, no se puede enviar resumen.")
         return
 
     zona_mexico = pytz.timezone('America/Mexico_City')
@@ -229,15 +261,12 @@ def notificar_resumen_doctor(doc_id):
                 except:
                     pass
             
-            nombre_raw = titulo.replace('✅', '').replace('❌', '')
-            nombre_limpio = re.sub(r'\d{10}', '', nombre_raw)
-            nombre_limpio = re.sub(r'[-–—_•.]', ' ', nombre_limpio)
-            nombre_paciente = re.sub(r'\s+', ' ', nombre_limpio).strip() or "Paciente"
+            p_nombre_resumen, _ = extraer_datos_evento(evento, doc_id)
 
             if '✅' in titulo:
-                confirmados.append(f"- {nombre_paciente} a las {hora_str} hrs")
+                confirmados.append(f"- {p_nombre_resumen} a las {hora_str} hrs")
             elif '❌' in titulo:
-                cancelados.append(f"- {nombre_paciente} a las {hora_str} hrs")
+                cancelados.append(f"- {p_nombre_resumen} a las {hora_str} hrs")
 
         mensaje = f"📊 *Actualización de agenda (Resumen)*:\n\n"
         mensaje += f"✅ *Confirmados ({len(confirmados)}):*\n"
@@ -304,14 +333,12 @@ def procesar_calendarios_diarios():
     log_debug("Iniciando el proceso diario masivo de calendarios...")
     
     if not supabase:
-        log_debug("Error: Supabase no está disponible para obtener los doctores.")
         return
 
     try:
         res = supabase.table("Doctores").select("*").execute()
         doctores = res.data if res.data else []
     except Exception as e:
-        log_debug(f"Error al obtener doctores de Supabase en proceso diario: {e}")
         return
 
     if not doctores:
@@ -325,13 +352,10 @@ def procesar_calendarios_diarios():
     fin = fin_mexico.astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
 
     for doc in doctores:
-        doc_id = doc.get("id", "default")
+        doc_id_actual = doc.get("id", "default")
         cal_id = doc.get("calendar_id") or doc.get("email")
         if not cal_id:
             continue
-
-        log_debug(f"Revisando calendario para doctor: {doc_id} ({cal_id})")
-        doc_data = get_doctor_data(doc_id)
 
         try:
             eventos_result = calendario.events().list(calendarId=cal_id, timeMin=inicio, timeMax=fin).execute()
@@ -354,7 +378,11 @@ def procesar_calendarios_diarios():
                 telefono_encontrado = match.group(0)
                 telefono_meta = "52" + telefono_encontrado
 
-                registrar_recordatorio_activo(telefono_meta, doc_id)
+                # Extraer nombre y doctor real de forma inteligente
+                p_nombre, doc_id_real = extraer_datos_evento(evento, doc_id_actual)
+                doc_data = get_doctor_data(doc_id_real)
+
+                registrar_recordatorio_activo(telefono_meta, doc_id_real)
 
                 start_dt = evento.get('start', {}).get('dateTime', '')
                 hora_str = ""
@@ -364,11 +392,6 @@ def procesar_calendarios_diarios():
                         hora_str = dt_obj.strftime('%H:%M')
                     except:
                         hora_str = "00:00"
-
-                nombre_limpio = re.sub(r'\d{10}', '', titulo)
-                nombre_limpio = re.sub(r'[-–—_•.]', ' ', nombre_limpio)
-                nombre_limpio = re.sub(r'\s+', ' ', nombre_limpio).strip()
-                p_nombre = nombre_limpio if nombre_limpio else "Paciente"
 
                 p_ocupacion = str(doc_data.get('ocupation') or '').strip() or "Atención Psicológica"
                 p_fecha = "hoy"
@@ -385,9 +408,7 @@ def procesar_calendarios_diarios():
 
                 resp = enviar_mensaje(telefono_meta, "template", template_params=params)
                 if resp and resp.status_code < 400:
-                    log_debug(f"Recordatorio enviado exitosamente a {telefono_meta} para el doctor {doc_id}")
-                else:
-                    log_debug(f"Fallo al enviar recordatorio a {telefono_meta} para el doctor {doc_id}")
+                    log_debug(f"Recordatorio enviado exitosamente a {telefono_meta} para el doctor {doc_id_real}")
 
         except Exception as err_cal:
             log_debug(f"Error procesando calendario {cal_id}: {err_cal}")
@@ -405,8 +426,6 @@ def procesar_webhook_asincrono(data):
             telefono_cliente = msg.get('from')
             texto = msg.get('button', {}).get('text', '').lower() if msg.get('type') == 'button' else msg.get('text', {}).get('body', '').lower()
 
-            log_debug(f"Mensaje recibido de cliente {telefono_cliente}: '{texto}'")
-
             if "si" in texto or "confirmo" in texto:
                 doc_id_encontrado = marcar_evento(telefono_cliente, 'confirmar')
                 if doc_id_encontrado:
@@ -414,8 +433,6 @@ def procesar_webhook_asincrono(data):
                     texto_confirmacion = f"Perfecto, hemos confirmado tu cita para el día de hoy con {doc['nombre']}. Dudas o aclaraciones, comunícate aquí: {doc['wa_link']}"
                     enviar_mensaje(telefono_cliente, "text", contenido=texto_confirmacion)
                     notificar_resumen_doctor(doc_id_encontrado)
-                else:
-                    log_debug(f"No se pudo asociar la confirmación del número {telefono_cliente} a ningún doctor.")
                 
             elif "no" in texto or "reagendar" in texto:
                 doc_id_encontrado = marcar_evento(telefono_cliente, 'reagendar')
@@ -424,8 +441,6 @@ def procesar_webhook_asincrono(data):
                     texto_reagendar = f"Entendido. Para reagendar, comunícate con {doc['nombre']} aquí: {doc['wa_link']}"
                     enviar_mensaje(telefono_cliente, "text", contenido=texto_reagendar)
                     notificar_resumen_doctor(doc_id_encontrado)
-                else:
-                    log_debug(f"No se pudo asociar la cancelación del número {telefono_cliente} a ningún doctor.")
     except Exception as e:
         log_debug(f"Error crítico en proceso asíncrono de webhook: {e}")
 
@@ -436,7 +451,6 @@ def webhook():
         return "Forbidden", 403
     
     data = request.get_json()
-    
     hilo = threading.Thread(target=procesar_webhook_asincrono, args=(data,))
     hilo.start()
     
