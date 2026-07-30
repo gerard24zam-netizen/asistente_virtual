@@ -93,18 +93,26 @@ def limpiar_telefono(tel):
     return "".join(filter(str.isdigit, str(tel)))[-10:]
 
 def registrar_recordatorio_activo(telefono, doctor_id):
-    """Guarda qué doctor le escribió a qué teléfono para evitar confusiones"""
-    if supabase and telefono and doctor_id:
-        try:
-            tel_limpio = limpiar_telefono(telefono)
-            supabase.table("recordatorios_activos").upsert({
-                "telefono": tel_limpio,
-                "doctor_id": str(doctor_id),
-                "updated_at": datetime.datetime.now().isoformat()
-            }, on_conflict="telefono").execute()
-            log_debug(f"Memoria actualizada: Teléfono {tel_limpio} asociado al doctor_id {doctor_id}")
-        except Exception as e:
-            log_debug(f"No se pudo guardar recordatorio activo en Supabase: {e}")
+    """Guarda qué doctor le escribió a qué teléfono con control de errores de Supabase"""
+    if not supabase or not telefono or not doctor_id:
+        return
+        
+    try:
+        tel_limpio = limpiar_telefono(telefono)
+        response = supabase.table("recordatorios_activos").upsert({
+            "telefono": tel_limpio,
+            "doctor_id": str(doctor_id),
+            "updated_at": datetime.datetime.now().isoformat()
+        }, on_conflict="telefono").execute()
+        
+        log_debug(f"Memoria actualizada: Teléfono {tel_limpio} asociado al doctor_id {doctor_id}")
+        
+    except Exception as e:
+        error_str = str(e)
+        if "PGRST205" in error_str or "does not exist" in error_str:
+            log_debug("AVISO DE SUPABASE: La tabla 'recordatorios_activos' no existe todavía.")
+        else:
+            log_debug(f"Error inesperado al guardar recordatorio activo en Supabase: {error_str}")
 
 def marcar_evento(telefono_recibido, accion):
     tel_buscado = limpiar_telefono(telefono_recibido)
@@ -123,9 +131,8 @@ def marcar_evento(telefono_recibido, accion):
             res_mem = supabase.table("recordatorios_activos").select("doctor_id").eq("telefono", tel_buscado).execute()
             if res_mem.data and len(res_mem.data) > 0:
                 doctor_sugerido_id = res_mem.data[0].get("doctor_id")
-                log_debug(f"Memoria encontrada: El teléfono {tel_buscado} pertenece al doctor_id '{doctor_sugerido_id}'")
-        except Exception as e:
-            log_debug(f"Error consultando memoria de recordatorios activos: {e}")
+        except Exception:
+            pass
 
     doctores_registrados = []
     if supabase:
@@ -164,7 +171,7 @@ def marcar_evento(telefono_recibido, accion):
                 numeros_en_evento = limpiar_telefono(texto_completo)
                 
                 if tel_buscado in numeros_en_evento:
-                    log_debug(f"¡Cita encontrada en el calendario correcto del doctor ID: '{doc_id_actual}' ({cal_id})!")
+                    log_debug(f"¡Cita encontrada en el calendario del doctor ID: '{doc_id_actual}' ({cal_id})!")
                     if simbolo in titulo: 
                         return doc_id_actual
                     
@@ -271,12 +278,27 @@ def detonar_recordatorio():
     
     registrar_recordatorio_activo(telefono, doctor_id)
     
+    p_nombre = str(data.get('nombre') or '').strip()
+    if not p_nombre: p_nombre = "Paciente"
+    
+    p_ocupacion = str(doc_data.get('ocupation') or '').strip()
+    if not p_ocupacion: p_ocupacion = "Atención Psicológica"
+    
+    p_fecha = str(data.get('fecha') or '').strip()
+    if not p_fecha: p_fecha = "hoy"
+    
+    p_hora = str(data.get('hora') or '').strip()
+    if not p_hora: p_hora = "00:00"
+    
+    p_doc = str(doc_data.get('nombre') or '').strip()
+    if not p_doc: p_doc = "Doctor"
+
     params = [
-        {"type": "text", "text": str(data.get('nombre') or 'Paciente')},
-        {"type": "text", "text": str(doc_data.get('ocupation') or 'Atención Psicológica')},
-        {"type": "text", "text": str(data.get('fecha') or 'hoy')},
-        {"type": "text", "text": str(data.get('hora') or '00:00')},
-        {"type": "text", "text": str(doc_data.get('nombre') or 'Doctor')}
+        {"type": "text", "text": p_nombre},
+        {"type": "text", "text": p_ocupacion},
+        {"type": "text", "text": p_fecha},
+        {"type": "text", "text": p_hora},
+        {"type": "text", "text": p_doc}
     ]
     
     resp = enviar_mensaje(telefono, "template", template_params=params)
@@ -349,16 +371,20 @@ def procesar_calendarios_diarios():
                     except:
                         hora_str = "00:00"
 
-                nombre_paciente = str(titulo.split(" ")[0]).strip() if titulo else "Paciente"
-                ocupacion_val = str(doc_data.get('ocupation') or 'Atención Psicológica').strip()
-                nombre_doc = str(doc_data.get('nombre') or 'Doctor').strip()
+                # Blindaje estricto de parámetros contra vacíos (Evita error #131008 de Meta)
+                nombre_raw = titulo.split(" ")[0] if titulo else ""
+                p_nombre = nombre_raw.strip() if nombre_raw and nombre_raw.strip() else "Paciente"
+                p_ocupacion = str(doc_data.get('ocupation') or '').strip() or "Atención Psicológica"
+                p_fecha = "hoy"
+                p_hora = hora_str if hora_str else "00:00"
+                p_doc = str(doc_data.get('nombre') or '').strip() or "Doctor"
 
                 params = [
-                    {"type": "text", "text": nombre_paciente},
-                    {"type": "text", "text": ocupacion_val},
-                    {"type": "text", "text": "hoy"},
-                    {"type": "text", "text": hora_str if hora_str else "00:00"},
-                    {"type": "text", "text": nombre_doc}
+                    {"type": "text", "text": p_nombre},
+                    {"type": "text", "text": p_ocupacion},
+                    {"type": "text", "text": p_fecha},
+                    {"type": "text", "text": p_hora},
+                    {"type": "text", "text": p_doc}
                 ]
 
                 resp = enviar_mensaje(telefono_meta, "template", template_params=params)
@@ -381,7 +407,7 @@ def procesar_webhook_asincrono(data):
         if 'messages' in data['entry'][0]['changes'][0]['value']:
             msg = data['entry'][0]['changes'][0]['value']['messages'][0]
             telefono_cliente = msg.get('from')
-            texto = msg.get('button', {}).get('text', '').lower() if msg.get('type') == 'button' else msg.get('text', {}).get('body', '').lower()
+            texto = msg.get('button', {}).get('text', '').lower() if msg.get('type'] == 'button' else msg.get('text', {}).get('body', '').lower()
 
             log_debug(f"Mensaje recibido de cliente {telefono_cliente}: '{texto}'")
 
