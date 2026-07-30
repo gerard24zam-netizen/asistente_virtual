@@ -98,20 +98,20 @@ def registrar_recordatorio_activo(telefono, doctor_id):
         
     try:
         tel_limpio = limpiar_telefono(telefono)
-        response = supabase.table("recordatorios_activos").upsert({
+        # Borrar explícitamente cualquier registro previo de este teléfono para evitar duplicados o datos obsoletos
+        supabase.table("recordatorios_activos").delete().eq("telefono", tel_limpio).execute()
+        
+        # Insertar el nuevo mapeo estricto del doctor actual
+        supabase.table("recordatorios_activos").insert({
             "telefono": tel_limpio,
             "doctor_id": str(doctor_id),
             "updated_at": datetime.datetime.now().isoformat()
-        }, on_conflict="telefono").execute()
+        }).execute()
         
-        log_debug(f"Memoria actualizada: Teléfono {tel_limpio} asociado ESTRICTAMENTE al doctor_id {doctor_id}")
+        log_debug(f"Memoria actualizada correctamente: Teléfono {tel_limpio} asociado al doctor_id {doctor_id}")
         
     except Exception as e:
-        error_str = str(e)
-        if "PGRST205" in error_str or "does not exist" in error_str:
-            log_debug("AVISO DE SUPABASE: La tabla 'recordatorios_activos' no existe todavía.")
-        else:
-            log_debug(f"Error inesperado al guardar recordatorio activo en Supabase: {error_str}")
+        log_debug(f"Error al guardar recordatorio activo en Supabase: {e}")
 
 def marcar_evento(telefono_recibido, accion):
     tel_buscado = limpiar_telefono(telefono_recibido)
