@@ -123,9 +123,13 @@ def marcar_evento(telefono_recibido, accion):
             "calendar_id": "gerard24zam@gmail.com"
         }]
         
+    # Recorremos todos los calendarios para ubicar quirúrgicamente el evento correcto
     for doc in doctores_registrados:
-        cal_id = doc.get("calendar_id") or doc.get("email") or "gerard24zam@gmail.com"
+        cal_id = doc.get("calendar_id") or doc.get("email")
         doc_id_actual = doc.get("id", "default")
+        
+        if not cal_id:
+            continue
         
         try:
             eventos_result = calendario.events().list(calendarId=cal_id, timeMin=inicio, timeMax=fin).execute()
@@ -139,13 +143,16 @@ def marcar_evento(telefono_recibido, accion):
                 numeros_en_evento = limpiar_telefono(texto_completo)
                 
                 if tel_buscado in numeros_en_evento:
-                    log_debug(f"Cita encontrada en el calendario '{cal_id}' perteneciente al doctor_id: '{doc_id_actual}'")
+                    log_debug(f"¡Cita encontrada en el calendario correcto de '{doc_id_actual}' ({cal_id})!")
                     if simbolo in titulo: 
                         return doc_id_actual
-                    nuevo_titulo = f"{titulo.replace(' ✅', '').replace(' ❌', '').strip()} {simbolo}"
+                    
+                    titulo_limpio = titulo.replace(' ✅', '').replace(' ❌', '').replace('✅', '').replace('❌', '').strip()
+                    nuevo_titulo = f"{titulo_limpio} {simbolo}"
+                    
                     evento['summary'] = nuevo_titulo
                     calendario.events().update(calendarId=cal_id, eventId=evento['id'], body=evento).execute()
-                    log_debug(f"Evento actualizado exitosamente en el calendario de: {cal_id}")
+                    log_debug(f"Evento actualizado exitosamente con '{simbolo}' en el calendario de: {cal_id}")
                     return doc_id_actual
         except Exception as e:
             log_debug(f"No se pudo revisar o actualizar el calendario {cal_id}: {e}")
