@@ -117,7 +117,10 @@ def marcar_evento(telefono_recibido, accion):
             "id": "default",
             "calendar_id": "gerard24zam@gmail.com"
         }]
-        
+    
+    # ORDEN CRUCIAL: Revisar primero a los especialistas y dejar "default" al final
+    doctores_registrados = sorted(doctores_registrados, key=lambda x: 1 if x.get("id") == "default" else 0)
+    
     for doc in doctores_registrados:
         cal_id = doc.get("calendar_id") or doc.get("email")
         doc_id_actual = doc.get("id", "default")
@@ -137,7 +140,7 @@ def marcar_evento(telefono_recibido, accion):
                 numeros_en_evento = limpiar_telefono(texto_completo)
                 
                 if tel_buscado in numeros_en_evento:
-                    log_debug(f"¡Cita encontrada en el calendario del doctor ID: '{doc_id_actual}' ({cal_id})!")
+                    log_debug(f"¡Cita encontrada en el calendario del especialista ID: '{doc_id_actual}' ({cal_id})!")
                     if simbolo in titulo: 
                         return doc_id_actual
                     
@@ -350,7 +353,7 @@ def procesar_webhook_asincrono(data):
         if 'messages' in data['entry'][0]['changes'][0]['value']:
             msg = data['entry'][0]['changes'][0]['value']['messages'][0]
             telefono_cliente = msg.get('from')
-            texto = msg.get('button', {}).get('text', '').lower() if msg.get('type') == 'button' else msg.get('text', {}).get('body', '').lower()
+            texto = msg.get('button', {}).get('text', '').lower() if msg.get('type'] == 'button' else msg.get('text', {}).get('body', '').lower()
 
             log_debug(f"Mensaje recibido de cliente {telefono_cliente}: '{texto}'")
 
@@ -391,3 +394,4 @@ def webhook():
 
 if __name__ == '__main__':
     app.run(port=5000)
+    
