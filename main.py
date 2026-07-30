@@ -24,7 +24,6 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 
-# Diccionario de respaldo (Red de seguridad por si Supabase no responde)
 CONTACTOS_DOCTORES = {
     "default": {
         "nombre": "Psic. Gerardo Zamora",
@@ -33,30 +32,31 @@ CONTACTOS_DOCTORES = {
     }
 }
 
+def log_debug(mensaje):
+    """Función para forzar que los prints salgan en los logs de Gunicorn/Render al instante"""
+    print(f"DEBUG: {mensaje}", flush=True)
+
 def get_doctor_data(doctor_id="default"):
-    """
-    Busca al doctor en Supabase incluyendo nombre, link de WhatsApp y ocupación.
-    Si falla, utiliza el respaldo local automáticamente.
-    """
     if supabase:
         try:
+            log_debug(f"Consultando Supabase para el doctor_id: '{doctor_id}'")
             response = supabase.table("Doctores").select("*").eq("id", doctor_id).execute()
             if response.data and len(response.data) > 0:
                 row = response.data[0]
-                print(f"DEBUG: Datos obtenidos de Supabase para {doctor_id}")
+                log_debug(f"¡Doctor encontrado en Supabase!: {row}")
                 return {
                     "nombre": row.get("name") or row.get("nombre", "Psic. Gerardo Zamora"),
                     "wa_link": row.get("wa_link") or row.get("link", "https://wa.me/527226293417"),
                     "ocupation": row.get("ocupation", "Atención Psicológica")
                 }
+            else:
+                log_debug(f"No se encontró el ID '{doctor_id}' en la tabla Doctores de Supabase. Usando respaldo.")
         except Exception as e:
-            print(f"DEBUG: Error consultando Supabase: {e}")
+            log_debug(f"Error crítico consultando Supabase: {e}")
     
-    # Respaldo automático local
-    print(f"DEBUG: Usando respaldo local para {doctor_id}")
+    log_debug(f"Usando respaldo local para ID: '{doctor_id}'")
     return CONTACTOS_DOCTORES.get(doctor_id, CONTACTOS_DOCTORES["default"])
 
-# --- FUNCIÓN DE ENVÍO CENTRALIZADA (BLINDADA) ---
 def enviar_mensaje(telefono, tipo, contenido=None, template_params=None):
     headers = {"Authorization": f"Bearer {META_TOKEN}", "Content-Type": "application/json"}
     url = f"https://graph.facebook.com/v17.0/{TELEFONO_ID_META}/messages"
@@ -69,25 +69,21 @@ def enviar_mensaje(telefono, tipo, contenido=None, template_params=None):
                 "components": [{"type": "body", "parameters": template_params}]
             }
         }
-    else: # tipo == "text"
+    else:
         payload = {
             "messaging_product": "whatsapp", "to": telefono, "text": {"body": contenido}
         }
         
     try:
         resp = requests.post(url, json=payload, headers=headers)
-        print(f"DEBUG: Enviado a {telefono}. Status: {resp.status_code}")
+        log_debug(f"Mensaje enviado a {telefono}. Status: {resp.status_code}")
         if resp.status_code >= 400:
-            print(f"DEBUG: Respuesta de Meta (Error/Rechazo): {resp.text}")
+            log_debug(f"Respuesta de error de Meta: {resp.text}")
         return resp
-    except requests.exceptions.RequestException as e:
-        print(f"DEBUG: Error de conexión al enviar mensaje a Meta: {e}")
-        return None
     except Exception as e:
-        print(f"DEBUG: Error inesperado al enviar mensaje: {e}")
+        log_debug(f"Excepción al enviar mensaje a Meta: {e}")
         return None
 
-# --- LÓGICA DE ACTUALIZACIÓN DE CALENDARIO ---
 def obtener_servicio_calendar():
     creds_json = os.environ.get('GOOGLE_TOKEN_JSON')
     if not creds_json: raise ValueError("Error: No se encontró la variable GOOGLE_CREDENTIALS")
@@ -111,7 +107,6 @@ def marcar_evento(telefono_recibido, accion):
     
     simbolo = "✅" if accion == 'confirmar' else "❌"
     
-    # 1. Obtenemos todos los doctores dados de alta en Supabase de forma multi-tenant
     doctores_registrados = []
     if supabase:
         try:
@@ -119,16 +114,14 @@ def marcar_evento(telefono_recibido, accion):
             if res.data:
                 doctores_registrados = res.data
         except Exception as e:
-            print(f"DEBUG: Error obteniendo lista de doctores: {e}")
+            log_debug(f"Error obteniendo lista de doctores para marcar evento: {e}")
             
-    # Respaldo por si Supabase no responde
     if not doctores_registrados:
         doctores_registrados = [{
             "id": "default",
             "calendar_id": "gerard24zam@gmail.com"
         }]
         
-    # 2. Buscamos y actualizamos en el calendario del doctor propietario correspondiente
     for doc in doctores_registrados:
         cal_id = doc.get("calendar_id") or doc.get("email") or "gerard24zam@gmail.com"
         doc_id_actual = doc.get("id", "default")
@@ -145,19 +138,22 @@ def marcar_evento(telefono_recibido, accion):
                 numeros_en_evento = limpiar_telefono(texto_completo)
                 
                 if tel_buscado in numeros_en_evento:
+                    log_debug(f"Cita encontrada en el calendario '{cal_id}' perteneciente al doctor_id: '{doc_id_actual}'")
                     if simbolo in titulo: 
                         return doc_id_actual
                     nuevo_titulo = f"{titulo.replace(' ✅', '').replace(' ❌', '').strip()} {simbolo}"
                     evento['summary'] = nuevo_titulo
                     calendario.events().update(calendarId=cal_id, eventId=evento['id'], body=evento).execute()
-                    print(f"DEBUG: Evento actualizado en el calendario de: {cal_id}")
+                    log_debug(f"Evento actualizado exitosamente en el calendario de: {cal_id}")
                     return doc_id_actual
         except Exception as e:
-            print(f"DEBUG: No se pudo revisar el calendario {cal_id}: {e}")
+            log_debug(f"No se pudo revisar o actualizar el calendario {cal_id}: {e}")
             
+    log_debug("No se encontró coincidencia del teléfono en ningún calendario, usando ID por defecto.")
     return "default"
 
 def notificar_resumen_doctor(doc_id):
+    log_debug(f"Iniciando notificación de resumen para doctor_id: '{doc_id}'")
     doc_row = None
     if supabase:
         try:
@@ -165,7 +161,7 @@ def notificar_resumen_doctor(doc_id):
             if res.data:
                 doc_row = res.data[0]
         except Exception as e:
-            print(f"DEBUG: Error obteniendo doctor para resumen: {e}")
+            log_debug(f"Error obteniendo datos del doctor para resumen: {e}")
     
     if not doc_row:
         wa_link = CONTACTOS_DOCTORES.get("default", {}).get("wa_link", "https://wa.me/527226293417")
@@ -176,6 +172,7 @@ def notificar_resumen_doctor(doc_id):
     
     tel_doctor = "".join(filter(str.isdigit, str(wa_link)))
     if not tel_doctor:
+        log_debug("El teléfono del doctor está vacío, no se puede enviar resumen.")
         return
 
     zona_mexico = pytz.timezone('America/Mexico_City')
@@ -225,9 +222,8 @@ def notificar_resumen_doctor(doc_id):
 
         enviar_mensaje(tel_doctor, "text", contenido=mensaje)
     except Exception as e:
-        print(f"DEBUG: Error al enviar resumen al doctor: {e}")
+        log_debug(f"Error al armar o enviar resumen al doctor: {e}")
 
-# --- RUTAS ---
 @app.route('/')
 def home():
     return "Bot de citas multi-tenant activo y funcionando correctamente", 200
@@ -242,23 +238,24 @@ def detonar_recordatorio():
     doc_data = get_doctor_data(doctor_id)
     
     params = [
-        {"type": "text", "text": data.get('nombre')},          # {{1}} Nombre del paciente
-        {"type": "text", "text": doc_data.get('ocupation')},   # {{2}} Tipo de consulta / Ocupación desde Supabase
-        {"type": "text", "text": data.get('fecha')},          # {{3}} Fecha de la cita
-        {"type": "text", "text": data.get('hora')},           # {{4}} Hora de la cita
-        {"type": "text", "text": doc_data.get('nombre')}       # {{5}} Nombre del doctor desde Supabase
+        {"type": "text", "text": data.get('nombre')},
+        {"type": "text", "text": doc_data.get('ocupation')},
+        {"type": "text", "text": data.get('fecha')},
+        {"type": "text", "text": data.get('hora')},
+        {"type": "text", "text": doc_data.get('nombre')}
     ]
     
     enviar_mensaje(telefono, "template", template_params=params)
     return jsonify({"status": 200})
 
 def procesar_webhook_asincrono(data):
-    """Función que ejecuta toda la lógica pesada en segundo plano para evitar bloqueos en el Webhook"""
     try:
         if 'messages' in data['entry'][0]['changes'][0]['value']:
             msg = data['entry'][0]['changes'][0]['value']['messages'][0]
             telefono_cliente = msg.get('from')
-            texto = msg.get('button', {}).get('text', '').lower() if msg.get('type') == 'button' else msg.get('text', {}).get('body', '').lower()
+            texto = msg.get('button', {}).get('text', '').lower() if msg.get('type'] == 'button' else msg.get('text', {}).get('body', '').lower()
+
+            log_debug(f"Mensaje recibido de cliente {telefono_cliente}: '{texto}'")
 
             if "si" in texto or "confirmo" in texto:
                 doc_id_encontrado = marcar_evento(telefono_cliente, 'confirmar')
@@ -278,7 +275,7 @@ def procesar_webhook_asincrono(data):
                 
                 notificar_resumen_doctor(doc_id_encontrado)
     except Exception as e:
-        print(f"DEBUG: Error procesando webhook en segundo plano: {e}")
+        log_debug(f"Error crítico en proceso asíncrono de webhook: {e}")
 
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
@@ -288,7 +285,7 @@ def webhook():
     
     data = request.get_json()
     
-    # Lanzamos el proceso en un hilo secundario y respondemos 200 OK inmediatamente a Meta
+    # Lanzamos el hilo y respondemos inmediatamente a Meta
     hilo = threading.Thread(target=procesar_webhook_asincrono, args=(data,))
     hilo.start()
     
