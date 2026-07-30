@@ -24,6 +24,9 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 
+# Memoria RAM temporal para evitar bloqueos por RLS de Supabase
+RECORDATORIOS_ACTIVOS_MEMORIA = {}
+
 def log_debug(mensaje):
     print(f"DEBUG: {mensaje}", flush=True)
 
@@ -93,25 +96,24 @@ def limpiar_telefono(tel):
     return "".join(filter(str.isdigit, str(tel)))[-10:]
 
 def registrar_recordatorio_activo(telefono, doctor_id):
-    if not supabase or not telefono or not doctor_id:
+    if not telefono or not doctor_id:
         return
         
-    try:
-        tel_limpio = limpiar_telefono(telefono)
-        # Borrar explícitamente cualquier registro previo de este teléfono para evitar duplicados o datos obsoletos
-        supabase.table("recordatorios_activos").delete().eq("telefono", tel_limpio).execute()
-        
-        # Insertar el nuevo mapeo estricto del doctor actual
-        supabase.table("recordatorios_activos").insert({
-            "telefono": tel_limpio,
-            "doctor_id": str(doctor_id),
-            "updated_at": datetime.datetime.now().isoformat()
-        }).execute()
-        
-        log_debug(f"Memoria actualizada correctamente: Teléfono {tel_limpio} asociado al doctor_id {doctor_id}")
-        
-    except Exception as e:
-        log_debug(f"Error al guardar recordatorio activo en Supabase: {e}")
+    tel_limpio = limpiar_telefono(telefono)
+    # Guardado primario en memoria RAM del servidor (Inmediato y sin bloqueos RLS)
+    RECORDATORIOS_ACTIVOS_MEMORIA[tel_limpio] = str(doctor_id)
+    log_debug(f"Memoria RAM actualizada: Teléfono {tel_limpio} asociado al doctor_id {doctor_id}")
+
+    if supabase:
+        try:
+            supabase.table("recordatorios_activos").delete().eq("telefono", tel_limpio).execute()
+            supabase.table("recordatorios_activos").insert({
+                "telefono": tel_limpio,
+                "doctor_id": str(doctor_id),
+                "updated_at": datetime.datetime.now().isoformat()
+            }).execute()
+        except Exception as e:
+            log_debug(f"Aviso Supabase (recordatorios_activos): {e}")
 
 def marcar_evento(telefono_recibido, accion):
     tel_buscado = limpiar_telefono(telefono_recibido)
@@ -124,14 +126,18 @@ def marcar_evento(telefono_recibido, accion):
     
     simbolo = "✅" if accion == 'confirmar' else "❌"
     
-    # 1. Recuperar estrictamente el doctor_id asociado a este teléfono en Supabase
+    # 1. Recuperar doctor_id priorizando la memoria RAM local, con respaldo en Supabase
     doctor_sugerido_id = "default"
-    if supabase:
+    if tel_buscado in RECORDATORIOS_ACTIVOS_MEMORIA:
+        doctor_sugerido_id = RECORDATORIOS_ACTIVOS_MEMORIA[tel_buscado]
+        log_debug(f"Doctor recuperado de Memoria RAM para el teléfono {tel_buscado}: '{doctor_sugerido_id}'")
+    elif supabase:
         try:
             res_mem = supabase.table("recordatorios_activos").select("doctor_id").eq("telefono", tel_buscado).execute()
             if res_mem.data and len(res_mem.data) > 0:
                 doctor_sugerido_id = res_mem.data[0].get("doctor_id")
-                log_debug(f"Doctor recuperado de memoria para el teléfono {tel_buscado}: '{doctor_sugerido_id}'")
+                RECORDATORIOS_ACTIVOS_MEMORIA[tel_buscado] = doctor_sugerido_id
+                log_debug(f"Doctor recuperado de Supabase para el teléfono {tel_buscado}: '{doctor_sugerido_id}'")
         except Exception as e:
             log_debug(f"Error consultando recordatorios_activos: {e}")
 
