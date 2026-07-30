@@ -104,7 +104,7 @@ def registrar_recordatorio_activo(telefono, doctor_id):
             }, on_conflict="telefono").execute()
             log_debug(f"Memoria actualizada: Teléfono {tel_limpio} asociado al doctor_id {doctor_id}")
         except Exception as e:
-            log_debug(f"No se pudo guardar recordatorio activo en Supabase (la tabla se creará o ignorará si no existe): {e}")
+            log_debug(f"No se pudo guardar recordatorio activo en Supabase: {e}")
 
 def marcar_evento(telefono_recibido, accion):
     tel_buscado = limpiar_telefono(telefono_recibido)
@@ -117,14 +117,13 @@ def marcar_evento(telefono_recibido, accion):
     
     simbolo = "✅" if accion == 'confirmar' else "❌"
     
-    # 1. INTELIGENCIA DE ASOCIACIÓN: Consultar si recordamos qué doctor le escribió
     doctor_sugerido_id = None
     if supabase:
         try:
             res_mem = supabase.table("recordatorios_activos").select("doctor_id").eq("telefono", tel_buscado).execute()
             if res_mem.data and len(res_mem.data) > 0:
                 doctor_sugerido_id = res_mem.data[0].get("doctor_id")
-                log_debug(f"Memoria encontrada: El teléfono {tel_buscado pertenece al doctor_id '{doctor_sugerido_id}'")
+                log_debug(f"Memoria encontrada: El teléfono {tel_buscado} pertenece al doctor_id '{doctor_sugerido_id}'")
         except Exception as e:
             log_debug(f"Error consultando memoria de recordatorios activos: {e}")
 
@@ -143,7 +142,6 @@ def marcar_evento(telefono_recibido, accion):
             "calendar_id": "gerard24zam@gmail.com"
         }]
     
-    # ORDEN INTELIGENTE: Si tenemos al doctor sugerido por memoria, lo ponemos PRIMERO ABSOLUTO
     if doctor_sugerido_id:
         doctores_registrados = sorted(doctores_registrados, key=lambda x: 0 if str(x.get("id")) == str(doctor_sugerido_id) else 1)
     
@@ -271,7 +269,6 @@ def detonar_recordatorio():
     doctor_id = data.get('doctor_id', 'default')
     doc_data = get_doctor_data(doctor_id)
     
-    # Guardar en memoria qué doctor envió este recordatorio
     registrar_recordatorio_activo(telefono, doctor_id)
     
     params = [
@@ -317,7 +314,7 @@ def procesar_calendarios_diarios():
         if not cal_id:
             continue
 
-        log_debug(f"Revisando calendario (vía Cuenta de Servicio) para doctor: {doc_id} ({cal_id})")
+        log_debug(f"Revisando calendario para doctor: {doc_id} ({cal_id})")
         doc_data = get_doctor_data(doc_id)
 
         try:
@@ -341,7 +338,6 @@ def procesar_calendarios_diarios():
                 telefono_encontrado = match.group(0)
                 telefono_meta = "52" + telefono_encontrado
 
-                # Registrar memoria en proceso diario también
                 registrar_recordatorio_activo(telefono_meta, doc_id)
 
                 start_dt = evento.get('start', {}).get('dateTime', '')
