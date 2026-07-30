@@ -115,28 +115,38 @@ def registrar_recordatorio_activo(telefono, doctor_id):
             log_debug(f"Aviso Supabase (recordatorios_activos): {e}")
 
 def extraer_datos_evento(evento, doc_default_id):
-    """Extrae inteligentemente el nombre del paciente y determina el doctor correcto."""
+    """Extrae el nombre del paciente priorizando el contenido entre paréntesis."""
     titulo = evento.get('summary', '')
     descripcion = evento.get('description', '')
     
-    # 1. Extraer nombre del paciente buscando en asistentes (attendees) o descripción
     p_nombre = "Paciente"
-    attendees = evento.get('attendees', [])
-    for att in attendees:
-        display_name = att.get('displayName', '')
-        if display_name and not any(k in display_name.lower() for k in ['celia', 'gerardo', 'psic', 'doctor', 'dra', 'dr', 'atención', 'atencion']):
-            p_nombre = display_name.strip()
-            break
-            
+    
+    # 1. Prioridad absoluta: Extraer texto entre paréntesis (ej. "Atención Psicológica (Celia Reyes Ponce)")
+    match_parentesis = re.search(r'\(([^)]+)\)', titulo)
+    if match_parentesis:
+        texto_interior = match_parentesis.group(1).strip()
+        if texto_interior.lower() not in ['atención psicológica', 'atencion psicologica', 'consulta', 'cita']:
+            p_nombre = texto_interior
+
+    # 2. Segunda opción: Buscar en asistentes (attendees)
+    if p_nombre == "Paciente":
+        attendees = evento.get('attendees', [])
+        for att in attendees:
+            display_name = att.get('displayName', '')
+            if display_name and not any(k in display_name.lower() for k in ['celia', 'gerardo', 'psic', 'doctor', 'dra', 'dr', 'atención', 'atencion']):
+                p_nombre = display_name.strip()
+                break
+
+    # 3. Tercera opción: Buscar en la descripción con etiquetas comunes
     if p_nombre == "Paciente" and descripcion:
         match_nombre = re.search(r'(?:nombre|paciente|client[e]?):\s*([^\n\r]+)', descripcion, re.IGNORECASE)
         if match_nombre:
             p_nombre = match_nombre.group(1).strip()
-            
-    # Si sigue sin encontrarse, limpiar el título evitando nombres de páginas de reserva
+
+    # 4. Fallback: Limpiar el título completo si no se encontró nada por lo anterior
     if p_nombre == "Paciente":
         nombre_limpio = titulo
-        for termino in ['atención psicológica', 'atencion psicologica', 'celia reyes', 'gerardo zamora']:
+        for termino in ['atención psicológica', 'atencion psicologica', 'consulta']:
             nombre_limpio = re.sub(re.escape(termino), '', nombre_limpio, flags=re.IGNORECASE)
         nombre_limpio = re.sub(r'\d{10}', '', nombre_limpio)
         nombre_limpio = re.sub(r'[-–—_•()\[\]]', ' ', nombre_limpio)
@@ -144,16 +154,8 @@ def extraer_datos_evento(evento, doc_default_id):
         if nombre_limpio and len(nombre_limpio) > 2:
             p_nombre = nombre_limpio
 
-    # 2. Determinar el doctor correcto mediante palabras clave en el evento
-    doc_id_final = doc_default_id
-    texto_completo = f"{titulo} {descripcion}".lower()
-    
-    if "gerardo" in texto_completo and "celia" not in texto_completo:
-        doc_id_final = "default"
-    elif "celia" in texto_completo and "gerardo" not in texto_completo:
-        doc_id_final = "Psic_Celia_Reyes"
-
-    return p_nombre, doc_id_final
+    # El doctor se determina estrictamente por el ID del calendario que lo posee
+    return p_nombre, doc_default_id
 
 def marcar_evento(telefono_recibido, accion):
     tel_buscado = limpiar_telefono(telefono_recibido)
@@ -368,6 +370,7 @@ def procesar_calendarios_diarios():
                 if "✅" in titulo or "❌" in titulo:
                     continue
 
+                # Filtrado seguro de correos y búsqueda de teléfono de 10 dígitos
                 descripcion_limpia = re.sub(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', ' ', descripcion) if descripcion else ""
                 texto_para_buscar = f"{titulo} {descripcion_limpia}"
                 
@@ -378,7 +381,7 @@ def procesar_calendarios_diarios():
                 telefono_encontrado = match.group(0)
                 telefono_meta = "52" + telefono_encontrado
 
-                # Extraer nombre y doctor real de forma inteligente
+                # Extracción del nombre y uso directo del ID del doctor dueño de este calendario
                 p_nombre, doc_id_real = extraer_datos_evento(evento, doc_id_actual)
                 doc_data = get_doctor_data(doc_id_real)
 
