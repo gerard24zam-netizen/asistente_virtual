@@ -249,6 +249,93 @@ def detonar_recordatorio():
     enviar_mensaje(telefono, "template", template_params=params)
     return jsonify({"status": 200})
 
+def procesar_calendarios_diarios():
+    log_debug("Iniciando el proceso diario masivo de calendarios...")
+    
+    if not supabase:
+        log_debug("Error: Supabase no está disponible para obtener los doctores.")
+        return
+
+    try:
+        res = supabase.table("Doctores").select("*").execute()
+        doctores = res.data if res.data else []
+    except Exception as e:
+        log_debug(f"Error al obtener doctores de Supabase en proceso diario: {e}")
+        return
+
+    if not doctores:
+        doctores = [{"id": "default", "calendar_id": "gerard24zam@gmail.com", "ocupation": "Atención Psicológica"}]
+
+    zona_mexico = pytz.timezone('America/Mexico_City')
+    ahora_mexico = datetime.datetime.now(zona_mexico)
+    inicio_mexico = ahora_mexico.replace(hour=0, minute=0, second=0, microsecond=0)
+    fin_mexico = ahora_mexico.replace(hour=23, minute=59, second=59, microsecond=0)
+    inicio = inicio_mexico.astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
+    fin = fin_mexico.astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
+
+    for doc in doctores:
+        doc_id = doc.get("id", "default")
+        cal_id = doc.get("calendar_id") or doc.get("email")
+        if not cal_id:
+            continue
+
+        log_debug(f"Revisando calendario (vía Cuenta de Servicio) para doctor: {doc_id} ({cal_id})")
+        doc_data = get_doctor_data(doc_id)
+
+        try:
+            eventos_result = calendario.events().list(calendarId=cal_id, timeMin=inicio, timeMax=fin).execute()
+            eventos = eventos_result.get('items', [])
+
+            for evento in eventos:
+                titulo = evento.get('summary', '')
+                descripcion = evento.get('description', '')
+                
+                if "✅" in titulo or "❌" in titulo:
+                    continue
+
+                descripcion_limpia = re.sub(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', ' ', descripcion) if descripcion else ""
+                texto_para_buscar = f"{titulo} {descripcion_limpia}"
+                
+                match = re.search(r'\d{10}', texto_para_buscar)
+                if not match:
+                    continue
+
+                telefono_encontrado = match.group(0)
+                telefono_meta = "52" + telefono_encontrado
+
+                start_dt = evento.get('start', {}).get('dateTime', '')
+                hora_str = ""
+                if start_dt:
+                    try:
+                        dt_obj = datetime.datetime.fromisoformat(start_dt).astimezone(zona_mexico)
+                        hora_str = dt_obj.strftime('%H:%M')
+                    except:
+                        hora_str = "00:00"
+
+                nombre = titulo.replace("Atención Psicológica", "").replace("(", "").replace(")", "").strip().split(" ")[0]
+                if not nombre:
+                    nombre = "Paciente"
+
+                params = [
+                    {"type": "text", "text": nombre},
+                    {"type": "text", "text": doc_data.get('ocupation')},
+                    {"type": "text", "text": "hoy"},
+                    {"type": "text", "text": hora_str},
+                    {"type": "text", "text": doc_data.get('nombre')}
+                ]
+
+                enviar_mensaje(telefono_meta, "template", template_params=params)
+                log_debug(f"Recordatorio enviado exitosamente a {telefono_meta} para el doctor {doc_id}")
+
+        except Exception as err_cal:
+            log_debug(f"Error procesando calendario {cal_id}: {err_cal}")
+
+@app.route('/ejecutar-proceso-diario', methods=['POST'])
+def detonar_proceso_diario():
+    hilo = threading.Thread(target=procesar_calendarios_diarios)
+    hilo.start()
+    return jsonify({"status": 200, "message": "Proceso diario iniciado en segundo plano"}), 200
+
 def procesar_webhook_asincrono(data):
     try:
         if 'messages' in data['entry'][0]['changes'][0]['value']:
