@@ -135,7 +135,7 @@ def marcar_evento(telefono_recibido, accion):
         except Exception as e:
             log_debug(f"Error consultando recordatorios_activos: {e}")
 
-    # 2. Obtener los datos y calendario de ESE doctor exclusivamente (sin buscar en otros doctores)
+    # 2. Obtener los datos y calendario de ESE doctor exclusivamente
     doc_data = get_doctor_data(doctor_sugerido_id)
     cal_id = doc_data.get("calendar_id") or doc_data.get("email")
     
@@ -264,7 +264,6 @@ def detonar_recordatorio():
     doctor_id = data.get('doctor_id', 'default')
     doc_data = get_doctor_data(doctor_id)
     
-    # Guardar en memoria de Supabase a qué doctor pertenece este paciente
     registrar_recordatorio_activo(telefono, doctor_id)
     
     p_nombre = str(data.get('nombre') or '').strip()
@@ -388,7 +387,7 @@ def procesar_calendarios_diarios():
             log_debug(f"Error procesando calendario {cal_id}: {err_cal}")
 
 @app.route('/ejecutar-proceso-diario', methods=['POST'])
-def detonar_proceso_diario:
+def detonar_proceso_diario():
     hilo = threading.Thread(target=procesar_calendarios_diarios)
     hilo.start()
     return jsonify({"status": 200, "message": "Proceso diario iniciado en segundo plano"}), 200
