@@ -24,8 +24,16 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 
+# Diccionario de respaldo local (Definido globalmente para evitar errores)
+CONTACTOS_DOCTORES = {
+    "default": {
+        "nombre": "Psic. Gerardo Zamora",
+        "wa_link": "https://wa.me/527226293417",
+        "ocupation": "Atención Psicológica"
+    }
+}
+
 def log_debug(mensaje):
-    """Función para forzar que los prints salgan en los logs de Gunicorn/Render al instante"""
     print(f"DEBUG: {mensaje}", flush=True)
 
 def get_doctor_data(doctor_id="default"):
@@ -42,11 +50,12 @@ def get_doctor_data(doctor_id="default"):
                     "ocupation": row.get("ocupation", "Atención Psicológica")
                 }
             else:
-                log_debug(f"No se encontró el ID '{doctor_id}' en la tabla Doctores de Supabase. Usando respaldo.")
+                log_debug(f"No se encontró el ID '{doctor_id}' en Supabase. Usando respaldo local.")
         except Exception as e:
-            log_debug(f"Error crítico consultando Supabase: {e}")
+            log_debug(f"Error consultando Supabase (Verifica tu URL/Key en Render): {e}")
+    else:
+        log_debug("Cliente de Supabase no inicializado (Faltan variables de entorno). Usando respaldo.")
     
-    log_debug(f"Usando respaldo local para ID: '{doctor_id}'")
     return CONTACTOS_DOCTORES.get(doctor_id, CONTACTOS_DOCTORES["default"])
 
 def enviar_mensaje(telefono, tipo, contenido=None, template_params=None):
@@ -277,7 +286,6 @@ def webhook():
     
     data = request.get_json()
     
-    # Lanzamos el hilo y respondemos inmediatamente a Meta
     hilo = threading.Thread(target=procesar_webhook_asincrono, args=(data,))
     hilo.start()
     
