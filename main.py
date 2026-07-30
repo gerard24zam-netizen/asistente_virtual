@@ -24,15 +24,6 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 
-# Diccionario de respaldo local (Definido globalmente para evitar errores)
-CONTACTOS_DOCTORES = {
-    "default": {
-        "nombre": "Psic. Gerardo Zamora",
-        "wa_link": "https://wa.me/527226293417",
-        "ocupation": "Atención Psicológica"
-    }
-}
-
 def log_debug(mensaje):
     print(f"DEBUG: {mensaje}", flush=True)
 
@@ -45,18 +36,23 @@ def get_doctor_data(doctor_id="default"):
                 row = response.data[0]
                 log_debug(f"¡Doctor encontrado en Supabase!: {row}")
                 return {
+                    "id": row.get("id"),
                     "nombre": row.get("name") or row.get("nombre", "Psic. Gerardo Zamora"),
                     "wa_link": row.get("wa_link") or row.get("link", "https://wa.me/527226293417"),
-                    "ocupation": row.get("ocupation", "Atención Psicológica")
+                    "ocupation": row.get("ocupation", "Atención Psicológica"),
+                    "calendar_id": row.get("calendar_id") or row.get("email")
                 }
-            else:
-                log_debug(f"No se encontró el ID '{doctor_id}' en Supabase. Usando respaldo local.")
         except Exception as e:
-            log_debug(f"Error consultando Supabase (Verifica tu URL/Key en Render): {e}")
-    else:
-        log_debug("Cliente de Supabase no inicializado (Faltan variables de entorno). Usando respaldo.")
-    
-    return CONTACTOS_DOCTORES.get(doctor_id, CONTACTOS_DOCTORES["default"])
+            log_debug(f"Error consultando Supabase para doctor_id {doctor_id}: {e}")
+            
+    # Respaldo estricto solo si falla la red
+    return {
+        "id": "default",
+        "nombre": "Psic. Gerardo Zamora",
+        "wa_link": "https://wa.me/527226293417",
+        "ocupation": "Atención Psicológica",
+        "calendar_id": "gerard24zam@gmail.com"
+    }
 
 def enviar_mensaje(telefono, tipo, contenido=None, template_params=None):
     headers = {"Authorization": f"Bearer {META_TOKEN}", "Content-Type": "application/json"}
@@ -123,6 +119,7 @@ def marcar_evento(telefono_recibido, accion):
             "calendar_id": "gerard24zam@gmail.com"
         }]
         
+    # Búsqueda multi-tenant estricta ligada al ID de Supabase
     for doc in doctores_registrados:
         cal_id = doc.get("calendar_id") or doc.get("email")
         doc_id_actual = doc.get("id", "default")
@@ -142,48 +139,43 @@ def marcar_evento(telefono_recibido, accion):
                 numeros_en_evento = limpiar_telefono(texto_completo)
                 
                 if tel_buscado in numeros_en_evento:
-                    log_debug(f"¡Cita encontrada en el calendario correcto de '{doc_id_actual}' ({cal_id})!")
+                    log_debug(f"¡Cita encontrada en el calendario del doctor ID: '{doc_id_actual}' ({cal_id})!")
                     if simbolo in titulo: 
                         return doc_id_actual
                     
                     titulo_limpio = titulo.replace(' ✅', '').replace(' ❌', '').replace('✅', '').replace('❌', '').strip()
                     nuevo_titulo = f"{titulo_limpio} {simbolo}"
                     
-                    # USO DE PATCH PARA ACTUALIZACIÓN QUIRÚRGICA DEL TÍTULO
-                    calendario.events().patch(
-                        calendarId=cal_id, 
-                        eventId=evento['id'], 
-                        body={'summary': nuevo_titulo}
-                    ).execute()
+                    try:
+                        calendario.events().patch(
+                            calendarId=cal_id, 
+                            eventId=evento['id'], 
+                            body={'summary': nuevo_titulo}
+                        ).execute()
+                        log_debug(f"Evento actualizado con '{simbolo}' en el calendario de: {cal_id}")
+                    except Exception as patch_err:
+                        log_debug(f"ERROR AL ACTUALIZAR CALENDARIO ({cal_id}). Asegúrate de dar permisos de escritura a la Cuenta de Servicio: {patch_err}")
                     
-                    log_debug(f"Evento actualizado exitosamente con '{simbolo}' en el calendario de: {cal_id}")
                     return doc_id_actual
         except Exception as e:
-            log_debug(f"No se pudo revisar o actualizar el calendario {cal_id}: {e}")
+            log_debug(f"No se pudo revisar el calendario {cal_id}: {e}")
             
-    log_debug("No se encontró coincidencia del teléfono en ningún calendario, usando ID por defecto.")
-    return "default"
+    log_debug("ADVERTENCIA: No se encontró coincidencia del teléfono en ningún calendario registrado.")
+    return None
 
 def notificar_resumen_doctor(doc_id):
-    log_debug(f"Iniciando notificación de resumen para doctor_id: '{doc_id}'")
-    doc_row = None
-    if supabase:
-        try:
-            res = supabase.table("Doctores").select("*").eq("id", doc_id).execute()
-            if res.data:
-                doc_row = res.data[0]
-        except Exception as e:
-            log_debug(f"Error obteniendo datos del doctor para resumen: {e}")
+    if not doc_id:
+        log_debug("doc_id recibido es nulo, no se puede enviar resumen.")
+        return
+
+    log_debug(f"Iniciando notificación de resumen exclusivamente para el doctor_id: '{doc_id}'")
+    doc_data = get_doctor_data(doc_id)
     
-    if not doc_row:
-        wa_link = CONTACTOS_DOCTORES.get("default", {}).get("wa_link", "https://wa.me/527226293417")
-        cal_id = "gerard24zam@gmail.com"
-    else:
-        wa_link = doc_row.get("wa_link") or doc_row.get("link", "https://wa.me/527226293417")
-        cal_id = doc_row.get("calendar_id") or doc_row.get("email") or "gerard24zam@gmail.com"
+    wa_link = doc_data.get("wa_link", "https://wa.me/527226293417")
+    cal_id = doc_data.get("calendar_id", "gerard24zam@gmail.com")
     
     tel_doctor = "".join(filter(str.isdigit, str(wa_link)))
-    log_debug(f"Resumen configurado para doctor_id '{doc_id}' -> WhatsApp destino: {tel_doctor} (Calendario: {cal_id})")
+    log_debug(f"Resumen dirigido a '{doc_data['nombre']}' -> WhatsApp destino: {tel_doctor} (Calendario: {cal_id})")
 
     if not tel_doctor:
         log_debug("El teléfono del doctor está vacío, no se puede enviar resumen.")
@@ -235,6 +227,7 @@ def notificar_resumen_doctor(doc_id):
             mensaje += "Ninguno"
 
         enviar_mensaje(tel_doctor, "text", contenido=mensaje)
+        log_debug(f"Resumen enviado exitosamente a {doc_data['nombre']} ({tel_doctor})")
     except Exception as e:
         log_debug(f"Error al armar o enviar resumen al doctor: {e}")
 
@@ -325,9 +318,7 @@ def procesar_calendarios_diarios():
                     except:
                         hora_str = "00:00"
 
-                nombre = titulo.replace("Atención Psicológica", "").replace("(", "").replace(")", "").strip().split(" ")[0]
-                if not nombre:
-                    nombre = "Paciente"
+                nombre = titulo.split(" ")[0] if titulo else "Paciente"
 
                 params = [
                     {"type": "text", "text": nombre},
@@ -354,27 +345,29 @@ def procesar_webhook_asincrono(data):
         if 'messages' in data['entry'][0]['changes'][0]['value']:
             msg = data['entry'][0]['changes'][0]['value']['messages'][0]
             telefono_cliente = msg.get('from')
-            texto = msg.get('button', {}).get('text', '').lower() if msg.get('type') == 'button' else msg.get('text', {}).get('body', '').lower()
+            texto = msg.get('button', {}).get('text', '').lower() if msg.get('type'] == 'button' else msg.get('text', {}).get('body', '').lower()
 
             log_debug(f"Mensaje recibido de cliente {telefono_cliente}: '{texto}'")
 
             if "si" in texto or "confirmo" in texto:
                 doc_id_encontrado = marcar_evento(telefono_cliente, 'confirmar')
-                doc = get_doctor_data(doc_id_encontrado)
-                
-                texto_confirmacion = f"Perfecto, hemos confirmado tu cita para el día de hoy con {doc['nombre']}. Dudas o aclaraciones, comunícate aquí: {doc['wa_link']}"
-                enviar_mensaje(telefono_cliente, "text", contenido=texto_confirmacion)
-                
-                notificar_resumen_doctor(doc_id_encontrado)
+                if doc_id_encontrado:
+                    doc = get_doctor_data(doc_id_encontrado)
+                    texto_confirmacion = f"Perfecto, hemos confirmado tu cita para el día de hoy con {doc['nombre']}. Dudas o aclaraciones, comunícate aquí: {doc['wa_link']}"
+                    enviar_mensaje(telefono_cliente, "text", contenido=texto_confirmacion)
+                    notificar_resumen_doctor(doc_id_encontrado)
+                else:
+                    log_debug(f"No se pudo asociar la confirmación del número {telefono_cliente} a ningún doctor.")
                 
             elif "no" in texto or "reagendar" in texto:
                 doc_id_encontrado = marcar_evento(telefono_cliente, 'reagendar')
-                doc = get_doctor_data(doc_id_encontrado)
-                
-                texto_reagendar = f"Entendido. Para reagendar, comunícate con {doc['nombre']} aquí: {doc['wa_link']}"
-                enviar_mensaje(telefono_cliente, "text", contenido=texto_reagendar)
-                
-                notificar_resumen_doctor(doc_id_encontrado)
+                if doc_id_encontrado:
+                    doc = get_doctor_data(doc_id_encontrado)
+                    texto_reagendar = f"Entendido. Para reagendar, comunícate con {doc['nombre']} aquí: {doc['wa_link']}"
+                    enviar_mensaje(telefono_cliente, "text", contenido=texto_reagendar)
+                    notificar_resumen_doctor(doc_id_encontrado)
+                else:
+                    log_debug(f"No se pudo asociar la cancelación del número {telefono_cliente} a ningún doctor.")
     except Exception as e:
         log_debug(f"Error crítico en proceso asíncrono de webhook: {e}")
 
