@@ -154,7 +154,6 @@ def extraer_datos_evento(evento, doc_default_id):
         if nombre_limpio and len(nombre_limpio) > 2:
             p_nombre = nombre_limpio
 
-    # El doctor se determina estrictamente por el ID del calendario que lo posee
     return p_nombre, doc_default_id
 
 def marcar_evento(telefono_recibido, accion):
@@ -190,10 +189,34 @@ def marcar_evento(telefono_recibido, accion):
 
     try:
         log_debug(f"Buscando cita exclusivamente en el calendario de: {doctor_sugerido_id} ({cal_id})")
-        eventos_result = calendario.events().list(calendarId=cal_id, timeMin=inicio, timeMax=fin).execute()
+        # 🛡️ singleEvents=True expande los eventos recurrentes para afectar SOLO a la instancia de hoy
+        eventos_result = calendario.events().list(
+            calendarId=cal_id, 
+            timeMin=inicio, 
+            timeMax=fin,
+            singleEvents=True,
+            orderBy='startTime'
+        ).execute()
         eventos = eventos_result.get('items', [])
         
         for evento in eventos:
+            # 🛡️ BLINDAJE ESTRICTO DE FECHA: Verificar que pertenezca exactamente a HOY en México
+            start_data = evento.get('start', {})
+            start_dt_str = start_data.get('dateTime', '') or start_data.get('date', '')
+            if start_dt_str:
+                try:
+                    if 'T' in start_dt_str:
+                        dt_evento = datetime.datetime.fromisoformat(start_dt_str).astimezone(zona_mexico)
+                        if dt_evento.date() != ahora_mexico.date():
+                            continue
+                    else:
+                        dt_evento = datetime.datetime.strptime(start_dt_str, '%Y-%m-%d').date()
+                        if dt_evento != ahora_mexico.date():
+                            continue
+                except Exception as date_err:
+                    log_debug(f"Error validando fecha del evento: {date_err}")
+                    continue
+
             titulo = evento.get('summary', '')
             descripcion = evento.get('description', '')
             descripcion_sin_emails = re.sub(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', '', descripcion)
@@ -201,7 +224,7 @@ def marcar_evento(telefono_recibido, accion):
             numeros_en_evento = limpiar_telefono(texto_completo)
             
             if tel_buscado in numeros_en_evento:
-                log_debug(f"¡Cita encontrada exitosamente en el calendario correcto ({doctor_sugerido_id})!")
+                log_debug(f"¡Cita encontrada exitosamente en el calendario correcto ({doctor_sugerido_id}) para el día de hoy!")
                 if simbolo in titulo: 
                     return doctor_sugerido_id
                 
@@ -214,7 +237,7 @@ def marcar_evento(telefono_recibido, accion):
                         eventId=evento['id'], 
                         body={'summary': nuevo_titulo}
                     ).execute()
-                    log_debug(f"Evento actualizado con '{simbolo}' en el calendario de: {cal_id}")
+                    log_debug(f"Evento actualizado con '{simbolo}' en el calendario de: {cal_id} (ID de instancia: {evento['id']})")
                 except Exception as patch_err:
                     log_debug(f"ERROR AL ACTUALIZAR CALENDARIO ({cal_id}): {patch_err}")
                 
@@ -246,13 +269,34 @@ def notificar_resumen_doctor(doc_id):
     fin = fin_mexico.astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
 
     try:
-        eventos_result = calendario.events().list(calendarId=cal_id, timeMin=inicio, timeMax=fin).execute()
+        eventos_result = calendario.events().list(
+            calendarId=cal_id, 
+            timeMin=inicio, 
+            timeMax=fin,
+            singleEvents=True,
+            orderBy='startTime'
+        ).execute()
         eventos = eventos_result.get('items', [])
         
         confirmados = []
         cancelados = []
 
         for evento in eventos:
+            start_data = evento.get('start', {})
+            start_dt_str = start_data.get('dateTime', '') or start_data.get('date', '')
+            if start_dt_str:
+                try:
+                    if 'T' in start_dt_str:
+                        dt_evento = datetime.datetime.fromisoformat(start_dt_str).astimezone(zona_mexico)
+                        if dt_evento.date() != ahora_mexico.date():
+                            continue
+                    else:
+                        dt_evento = datetime.datetime.strptime(start_dt_str, '%Y-%m-%d').date()
+                        if dt_evento != ahora_mexico.date():
+                            continue
+                except:
+                    continue
+
             titulo = evento.get('summary', '')
             start_dt = evento.get('start', {}).get('dateTime', '')
             hora_str = ""
@@ -360,17 +404,37 @@ def procesar_calendarios_diarios():
             continue
 
         try:
-            eventos_result = calendario.events().list(calendarId=cal_id, timeMin=inicio, timeMax=fin).execute()
+            eventos_result = calendario.events().list(
+                calendarId=cal_id, 
+                timeMin=inicio, 
+                timeMax=fin,
+                singleEvents=True,
+                orderBy='startTime'
+            ).execute()
             eventos = eventos_result.get('items', [])
 
             for evento in eventos:
+                start_data = evento.get('start', {})
+                start_dt_str = start_data.get('dateTime', '') or start_data.get('date', '')
+                if start_dt_str:
+                    try:
+                        if 'T' in start_dt_str:
+                            dt_evento = datetime.datetime.fromisoformat(start_dt_str).astimezone(zona_mexico)
+                            if dt_evento.date() != ahora_mexico.date():
+                                continue
+                        else:
+                            dt_evento = datetime.datetime.strptime(start_dt_str, '%Y-%m-%d').date()
+                            if dt_evento != ahora_mexico.date():
+                                continue
+                    except:
+                        continue
+
                 titulo = evento.get('summary', '')
                 descripcion = evento.get('description', '')
                 
                 if "✅" in titulo or "❌" in titulo:
                     continue
 
-                # Filtrado seguro de correos y búsqueda de teléfono de 10 dígitos
                 descripcion_limpia = re.sub(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', ' ', descripcion) if descripcion else ""
                 texto_para_buscar = f"{titulo} {descripcion_limpia}"
                 
@@ -381,7 +445,6 @@ def procesar_calendarios_diarios():
                 telefono_encontrado = match.group(0)
                 telefono_meta = "52" + telefono_encontrado
 
-                # Extracción del nombre y uso directo del ID del doctor dueño de este calendario
                 p_nombre, doc_id_real = extraer_datos_evento(evento, doc_id_actual)
                 doc_data = get_doctor_data(doc_id_real)
 
@@ -427,7 +490,7 @@ def procesar_webhook_asincrono(data):
         if 'messages' in data['entry'][0]['changes'][0]['value']:
             msg = data['entry'][0]['changes'][0]['value']['messages'][0]
             telefono_cliente = msg.get('from')
-            texto = msg.get('button', {}).get('text', '').lower() if msg.get('type') == 'button' else msg.get('text', {}).get('body', '').lower()
+            texto = msg.get('button', {}).get('text', '').lower() if msg.get('type'] == 'button' else msg.get('text', {}).get('body', '').lower()
 
             if "si" in texto or "confirmo" in texto:
                 doc_id_encontrado = marcar_evento(telefono_cliente, 'confirmar')
