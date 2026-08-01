@@ -490,7 +490,7 @@ def procesar_webhook_asincrono(data):
         if 'messages' in data['entry'][0]['changes'][0]['value']:
             msg = data['entry'][0]['changes'][0]['value']['messages'][0]
             telefono_cliente = msg.get('from')
-            texto = msg.get('button', {}).get('text', '').lower() if msg.get('type'] == 'button' else msg.get('text', {}).get('body', '').lower()
+            texto = msg.get('button', {}).get('text', '').lower() if msg.get('type') == 'button' else msg.get('text', {}).get('body', '').lower()
 
             if "si" in texto or "confirmo" in texto:
                 doc_id_encontrado = marcar_evento(telefono_cliente, 'confirmar')
