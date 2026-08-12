@@ -38,7 +38,7 @@ def enviar_plantilla_doctor(telefono, nombre, citas_count):
     payload = {
         "messaging_product": "whatsapp", "to": telefono, "type": "template",
         "template": {
-            "name": "jordnada_doc", "language": {"code": "es"},
+            "name": "jornada_doc", "language": {"code": "es_MX"},
             "components": [{
                 "type": "body",
                 "parameters": [
@@ -100,7 +100,7 @@ scheduler = BackgroundScheduler()
 scheduler.add_job(job_enviar_reporte_doctores, 'cron', hour=7, minute=0)
 scheduler.start()
 
-# --- LÓGICA DE PACIENTES (SIN CAMBIOS) ---
+# --- LÓGICA DE PACIENTES ---
 def get_doctor_data(doctor_id="default"):
     if supabase:
         try:
@@ -233,7 +233,8 @@ def procesar_webhook_asincrono(data):
         msg = data['entry'][0]['changes'][0]['value']['messages'][0]
         telefono_origen = msg.get('from')
         tipo = msg.get('type')
-        hoy = datetime.datetime.now().strftime('%Y-%m-%d')
+        hoy = datetime.datetime.now(pytz.timezone('America/Mexico_City')).strftime('%Y-%m-%d')
+        
         if tipo == 'interactive':
             btn_title = msg['interactive']['button_reply']['title']
             if supabase:
@@ -243,7 +244,14 @@ def procesar_webhook_asincrono(data):
                     if tel_doc == telefono_origen:
                         estado = True if "Empecemos" in btn_title else False
                         supabase.table("Doctores").update({"is_active_today": estado, "jornada_respondida_fecha": hoy}).eq("id", doc['id']).execute()
-                        enviar_mensaje(telefono_origen, "text", contenido=f"Jornada actualizada: {'Activa' if estado else 'Pausada'}")
+                        
+                        # Mensajes personalizados de respuesta según el botón presionado
+                        if "Empecemos" in btn_title:
+                            texto_respuesta = "*Confirmado que tenga un excelente día laboral* atte.: *Stein su Asistente Virtual*"
+                        else:
+                            texto_respuesta = "Tomar un descanso es bueno para la salud física y mental, que descanse y nos vemos mañana, Atte.: *Stein su Asistente Virtual*"
+                        
+                        enviar_mensaje(telefono_origen, "text", contenido=texto_respuesta)
                         break
         elif tipo in ['text', 'button']:
             texto = msg.get('button', {}).get('text', '').lower() if tipo == 'button' else msg.get('text', {}).get('body', '').lower()
