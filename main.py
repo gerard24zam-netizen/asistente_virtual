@@ -31,7 +31,7 @@ RECORDATORIOS_ACTIVOS_MEMORIA = {}
 def log_debug(mensaje):
     print(f"DEBUG: {mensaje}", flush=True)
 
-# --- NUEVA LÓGICA: ENVÍO PLANTILLA DOCTOR ---
+# --- NUEVA LÓGICA: ENVÍO PLANTILLA DOCTOR CON LOGS DETALLADOS ---
 def enviar_plantilla_doctor(telefono, nombre, citas_count):
     headers = {"Authorization": f"Bearer {META_TOKEN}", "Content-Type": "application/json"}
     url = f"https://graph.facebook.com/v17.0/{TELEFONO_ID_META}/messages"
@@ -42,43 +42,63 @@ def enviar_plantilla_doctor(telefono, nombre, citas_count):
             "components": [{
                 "type": "body",
                 "parameters": [
-                    {"type": "text", "text": nombre},
+                    {"type": "text", "text": str(nombre)},
                     {"type": "text", "text": str(citas_count)}
                 ]
             }]
         }
     }
-    requests.post(url, json=payload, headers=headers)
+    try:
+        resp = requests.post(url, json=payload, headers=headers)
+        log_debug(f"Respuesta de Meta para {telefono} -> Status: {resp.status_code} | Body: {resp.text}")
+        return resp
+    except Exception as e:
+        log_debug(f"Error al enviar petición HTTP a Meta: {e}")
+        return None
 
 def job_enviar_reporte_doctores():
     log_debug("Ejecutando proceso matutino de reportes para doctores...")
-    if not supabase: return
+    if not supabase: 
+        log_debug("Error: Supabase no está conectado.")
+        return
     try:
         doctores = supabase.table("Doctores").select("*").execute().data
+        log_debug(f"Doctores encontrados en Supabase: {len(doctores)}")
         hoy = datetime.datetime.now().strftime('%Y-%m-%d')
         
         for doc in doctores:
-            # 1. Validar si el doctor ya respondió hoy para no enviarle spam
-            # Nota: Asegúrate de tener una columna de fecha 'jornada_fecha' o similar en Supabase, 
-            # o evaluamos directamente si ya interactuó hoy.
+            log_debug(f"Revisando doctor: {doc.get('name') or doc.get('nombre')}")
+            
             if doc.get("jornada_respondida_fecha") == hoy:
-                log_debug(f"El doctor {doc.get('name')} ya respondió hoy. Omitiendo envío.")
+                log_debug("El doctor ya respondió hoy. Omitiendo envío.")
                 continue
 
-            # Contar citas
             cal_id = doc.get("calendar_id") or doc.get("email")
-            if not cal_id: continue
+            if not cal_id: 
+                log_debug("El doctor no tiene un calendar_id válido.")
+                continue
             
             # Obtener eventos
-            eventos_result = calendario.events().list(calendarId=cal_id, timeMin=f"{hoy}T00:00:00Z", timeMax=f"{hoy}T23:59:59Z", singleEvents=True).execute()
-            count = len(eventos_result.get('items', []))
+            try:
+                eventos_result = calendario.events().list(calendarId=cal_id, timeMin=f"{hoy}T00:00:00Z", timeMax=f"{hoy}T23:59:59Z", singleEvents=True).execute()
+                eventos = eventos_result.get('items', [])
+                count = len(eventos)
+                log_debug(f"Citas encontradas en calendario {cal_id}: {count}")
+            except Exception as e:
+                log_debug(f"Error al consultar Google Calendar para {cal_id}: {e}")
+                count = 0
             
             # Enviar plantilla
             telefono_doc = "".join(filter(str.isdigit, str(doc.get("wa_link", ""))))
+            log_debug(f"Teléfono extraído: {telefono_doc}")
+            
             if telefono_doc and len(telefono_doc) >= 10:
-                enviar_plantilla_doctor(telefono_doc, doc.get("name", "Dr"), count)
+                nombre_doc = doc.get("name") or doc.get("nombre") or "Dr"
+                enviar_plantilla_doctor(telefono_doc, nombre_doc, count)
+            else:
+                log_debug("Teléfono inválido o demasiado corto.")
     except Exception as e:
-        log_debug(f"Error en job_enviar_reporte_doctores: {e}")
+        log_debug(f"Error crítico en job_enviar_reporte_doctores: {e}")
 
 # --- SCHEDULER ---
 scheduler = BackgroundScheduler()
