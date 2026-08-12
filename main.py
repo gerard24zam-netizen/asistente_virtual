@@ -10,7 +10,7 @@ from flask import Flask, request, jsonify
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from supabase import create_client
-from apscheduler.schedulers.background import BackgroundScheduler # NUEVO
+from apscheduler.schedulers.background import BackgroundScheduler
 
 app = Flask(__name__)
 
@@ -18,6 +18,7 @@ app = Flask(__name__)
 TELEFONO_ID_META = "1120833397777315"
 META_TOKEN = "EAAXdEhil3gMBR0uiujuuAvK5nqaj8A9boQQ7Yd59u0Xa8GF86XVtJl2k7EWLecDPk74CCtBbu0VH2cOIL8DW9zd4h3Mbv3sdbmReK473770t9TDfyDZCqJhomFBbxc0kSu5zgpZAy4cWMNnssZAyZB81Gb6c9dfmwfrzTYGjy6oOIc7d7Px8vTATQ9cwHKROmwZDZD"
 VERIFY_TOKEN = "TOKEN_SECRETO_META" 
+API_KEY_SEGURIDAD = "MiClaveSuperSecreta123" # Llave para proteger el endpoint manual
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
 # --- CONFIGURACIÓN SUPABASE & SAAS ---
@@ -57,6 +58,13 @@ def job_enviar_reporte_doctores():
         hoy = datetime.datetime.now().strftime('%Y-%m-%d')
         
         for doc in doctores:
+            # 1. Validar si el doctor ya respondió hoy para no enviarle spam
+            # Nota: Asegúrate de tener una columna de fecha 'jornada_fecha' o similar en Supabase, 
+            # o evaluamos directamente si ya interactuó hoy.
+            if doc.get("jornada_respondida_fecha") == hoy:
+                log_debug(f"El doctor {doc.get('name')} ya respondió hoy. Omitiendo envío.")
+                continue
+
             # Contar citas
             cal_id = doc.get("calendar_id") or doc.get("email")
             if not cal_id: continue
@@ -65,7 +73,7 @@ def job_enviar_reporte_doctores():
             eventos_result = calendario.events().list(calendarId=cal_id, timeMin=f"{hoy}T00:00:00Z", timeMax=f"{hoy}T23:59:59Z", singleEvents=True).execute()
             count = len(eventos_result.get('items', []))
             
-            # Enviar plantilla (Asumimos wa_link contiene el teléfono)
+            # Enviar plantilla
             telefono_doc = "".join(filter(str.isdigit, str(doc.get("wa_link", ""))))
             if telefono_doc and len(telefono_doc) >= 10:
                 enviar_plantilla_doctor(telefono_doc, doc.get("name", "Dr"), count)
@@ -214,6 +222,14 @@ def notificar_resumen_doctor(doc_id):
     mensaje += f"\n\n❌ *Cancelados ({len(cancelados)}):*\n" + ("\n".join(cancelados) if cancelados else "Ninguno")
     enviar_mensaje(tel_doctor, "text", contenido=mensaje)
 
+# --- NUEVA RUTA PARA DISPARAR MANUALMENTE (PROTEGIDA) ---
+@app.route('/disparar-reportes', methods=['POST'])
+def endpoint_disparar():
+    if request.headers.get("X-API-KEY") != API_KEY_SEGURIDAD:
+        return "Acceso denegado", 403
+    job_enviar_reporte_doctores()
+    return jsonify({"status": "Proceso manual iniciado con éxito"}), 200
+
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
     if request.method == 'GET':
@@ -227,24 +243,27 @@ def webhook():
 
 def procesar_webhook_asincrono(data):
     try:
-        # 1. Detectar si es mensaje del doctor (Interactive) o paciente (Text)
         msg = data['entry'][0]['changes'][0]['value']['messages'][0]
         telefono_origen = msg.get('from')
         tipo = msg.get('type')
+        hoy = datetime.datetime.now().strftime('%Y-%m-%d')
         
         # Lógica para botones de Doctor (Interactive)
         if tipo == 'interactive':
             btn_title = msg['interactive']['button_reply']['title']
-            # Buscar doctor por teléfono
             if supabase:
-                # Obtenemos doctores para comparar el teléfono
                 doctores = supabase.table("Doctores").select("*").execute().data
                 for doc in doctores:
                     tel_doc = "".join(filter(str.isdigit, str(doc.get("wa_link", ""))))
                     if tel_doc == telefono_origen:
-                        # Acción según el botón
                         estado = True if "Empecemos" in btn_title else False
-                        supabase.table("Doctores").update({"is_active_today": estado}).eq("id", doc['id']).execute()
+                        
+                        # Actualizamos estado y marcamos que YA respondió hoy para evitar spam
+                        supabase.table("Doctores").update({
+                            "is_active_today": estado,
+                            "jornada_respondida_fecha": hoy
+                        }).eq("id", doc['id']).execute()
+                        
                         enviar_mensaje(telefono_origen, "text", contenido=f"Jornada actualizada: {'Activa' if estado else 'Pausada'}")
                         break
         
