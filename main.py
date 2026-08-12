@@ -38,7 +38,7 @@ def enviar_plantilla_doctor(telefono, nombre, citas_count):
     payload = {
         "messaging_product": "whatsapp", "to": telefono, "type": "template",
         "template": {
-            "name": "jornada_doctor", "language": {"code": "es"},
+            "name": "jordnada_doc", "language": {"code": "es"},
             "components": [{
                 "type": "body",
                 "parameters": [
