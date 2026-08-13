@@ -303,13 +303,35 @@ def notificar_resumen_doctor(doc_id):
 # --- RUTAS DE LA APLICACIÓN ---
 @app.route('/ejecutar-proceso-diario', methods=['POST'])
 def endpoint_proceso_diario():
-    job_enviar_reporte_doctores()
-    return jsonify({"status": "Proceso manual iniciado con éxito"}), 200
+    log_debug("INICIO: Ejecutando proceso masivo de recordatorios para pacientes...")
+    if not supabase:
+        log_debug("ERROR: Supabase no está inicializado.")
+        return jsonify({"status": "Error: Supabase no inicializado"}), 500
+    
+    try:
+        doctores_res = supabase.table("Doctores").select("*").execute()
+        doctores = doctores_res.data
+        if not doctores:
+            log_debug("ADVERTENCIA: No hay doctores registrados para enviar recordatorios a pacientes.")
+            return jsonify({"status": "Sin doctores"}), 200
+
+        hoy = datetime.datetime.now().strftime('%Y-%m-%d')
+        log_debug(f"Fecha evaluada para pacientes: {hoy}")
+
+        for doc in doctores:
+            doc_nombre = doc.get('name') or doc.get('nombre') or 'Sin nombre'
+            log_debug(f"--- Procesando recordatorios de pacientes para el doctor: {doc_nombre} ---")
+            enviar_recordatorios_a_pacientes(doc, hoy)
+
+        return jsonify({"status": "Proceso de recordatorios a pacientes ejecutado con éxito"}), 200
+    except Exception as e:
+        log_debug(f"Error crítico en endpoint_proceso_diario: {e}")
+        return jsonify({"status": f"Error: {e}"}), 500
 
 @app.route('/disparar-reportes', methods=['POST'])
 def endpoint_disparar():
     job_enviar_reporte_doctores()
-    return jsonify({"status": "Proceso manual iniciado con éxito"}), 200
+    return jsonify({"status": "Proceso manual de doctores iniciado con éxito"}), 200
 
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
@@ -333,7 +355,6 @@ def procesar_webhook_asincrono(data):
         tipo = msg.get('type')
         hoy = datetime.datetime.now().strftime('%Y-%m-%d')
         
-        # Normalizamos el teléfono de origen recibido por Meta a 10 dígitos
         tel_origen_limpio = limpiar_telefono(telefono_origen)
         
         if tipo == 'interactive':
@@ -341,7 +362,6 @@ def procesar_webhook_asincrono(data):
             if supabase:
                 doctores = supabase.table("Doctores").select("*").execute().data
                 for doc in doctores:
-                    # Normalizamos también el teléfono registrado en Supabase a 10 dígitos para que coincidan perfectamente
                     tel_doc_limpio = limpiar_telefono(doc.get("wa_link", "") or doc.get("link", ""))
                     
                     if tel_doc_limpio and tel_doc_limpio == tel_origen_limpio:
