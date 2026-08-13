@@ -206,6 +206,47 @@ def extraer_datos_evento(evento, doc_default_id):
         if match_nombre: p_nombre = match_nombre.group(1).strip()
     return p_nombre, doc_default_id
 
+def extraer_telefono_paciente(evento):
+    texto = evento.get('summary', '') + " " + evento.get('description', '')
+    matches = re.findall(r'(?:\+?52)?\s*(\d{10})', texto)
+    for m in matches:
+        tel_limpio = "".join(filter(str.isdigit, m))
+        if len(tel_limpio) >= 10:
+            return tel_limpio[-10:]
+    return None
+
+def enviar_recordatorios_a_pacientes(doc, hoy):
+    cal_id = doc.get("calendar_id") or doc.get("email")
+    if not cal_id: return
+    
+    try:
+        eventos_result = calendario.events().list(
+            calendarId=cal_id, 
+            timeMin=f"{hoy}T00:00:00Z", 
+            timeMax=f"{hoy}T23:59:59Z", 
+            singleEvents=True
+        ).execute()
+        eventos = eventos_result.get('items', [])
+        
+        contador_enviados = 0
+        for evento in eventos:
+            p_nombre, _ = extraer_datos_evento(evento, doc['id'])
+            tel_paciente = extraer_telefono_paciente(evento)
+            
+            if tel_paciente and len(tel_paciente) >= 10:
+                registrar_recordatorio_activo(tel_paciente, doc['id'])
+                params = [{"type": "text", "text": p_nombre}]
+                resp = enviar_mensaje(tel_paciente, "template", template_params=params)
+                if resp and resp.status_code in [200, 201]:
+                    contador_enviados += 1
+                    log_debug(f"Recordatorio enviado exitosamente al paciente {p_nombre} ({tel_paciente})")
+        
+        tel_doc = "".join(filter(str.isdigit, str(doc.get("wa_link", ""))))
+        if tel_doc:
+            enviar_mensaje(tel_doc, "text", contenido=f"📊 Se han enviado {contador_enviados} recordatorios de cita a los pacientes programados para hoy.")
+    except Exception as e:
+        log_debug(f"Error enviando recordatorios a pacientes: {e}")
+
 def marcar_evento(telefono_recibido, accion):
     tel_buscado = limpiar_telefono(telefono_recibido)
     zona_mexico = pytz.timezone('America/Mexico_City')
@@ -283,7 +324,11 @@ def webhook():
 
 def procesar_webhook_asincrono(data):
     try:
-        msg = data['entry'][0]['changes'][0]['value']['messages'][0]
+        value = data.get('entry', [{}])[0].get('changes', [{}])[0].get('value', {})
+        if 'messages' not in value:
+            return
+        
+        msg = value['messages'][0]
         telefono_origen = msg.get('from')
         tipo = msg.get('type')
         hoy = datetime.datetime.now().strftime('%Y-%m-%d')
@@ -300,7 +345,12 @@ def procesar_webhook_asincrono(data):
                             "is_active_today": estado,
                             "jornada_respondida_fecha": hoy
                         }).eq("id", doc['id']).execute()
-                        enviar_mensaje(telefono_origen, "text", contenido=f"Jornada actualizada: {'Activa' if estado else 'Pausada'}")
+                        
+                        if estado:
+                            enviar_mensaje(telefono_origen, "text", contenido="Jornada actualizada: Activa. Enviando recordatorios a los pacientes...")
+                            enviar_recordatorios_a_pacientes(doc, hoy)
+                        else:
+                            enviar_mensaje(telefono_origen, "text", contenido="Jornada actualizada: Pausada (Hoy no se trabaja).")
                         break
         
         elif tipo in ['text', 'button']:
@@ -313,7 +363,7 @@ def procesar_webhook_asincrono(data):
                 if doc_id: notificar_resumen_doctor(doc_id)
                 
     except Exception as e:
-        log_debug(f"Error en webhook: {e}")
+        log_debug(f"Error crítico procesando webhook: {e}")
 
 if __name__ == '__main__':
     app.run(port=5000)
