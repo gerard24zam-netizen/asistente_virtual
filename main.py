@@ -18,7 +18,7 @@ app = Flask(__name__)
 TELEFONO_ID_META = "1120833397777315"
 META_TOKEN = "EAAXdEhil3gMBR0uiujuuAvK5nqaj8A9boQQ7Yd59u0Xa8GF86XVtJl2k7EWLecDPk74CCtBbu0VH2cOIL8DW9zd4h3Mbv3sdbmReK473770t9TDfyDZCqJhomFBbxc0kSu5zgpZAy4cWMNnssZAyZB81Gb6c9dfmwfrzTYGjy6oOIc7d7Px8vTATQ9cwHKROmwZDZD"
 VERIFY_TOKEN = "TOKEN_SECRETO_META" 
-API_KEY_SEGURIDAD = "MiClaveSuperSecreta123" # Llave para proteger el endpoint manual
+API_KEY_SEGURIDAD = "MiClaveSuperSecreta123"
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
 # --- CONFIGURACIÓN SUPABASE & SAAS ---
@@ -31,77 +31,14 @@ RECORDATORIOS_ACTIVOS_MEMORIA = {}
 def log_debug(mensaje):
     print(f"DEBUG: {mensaje}", flush=True)
 
-# --- NUEVA LÓGICA: ENVÍO PLANTILLA DOCTOR ---
-def enviar_plantilla_doctor(telefono, nombre, citas_count):
-    headers = {"Authorization": f"Bearer {META_TOKEN}", "Content-Type": "application/json"}
-    url = f"https://graph.facebook.com/v17.0/{TELEFONO_ID_META}/messages"
-    payload = {
-        "messaging_product": "whatsapp", "to": telefono, "type": "template",
-        "template": {
-            "name": "jornada_doc", "language": {"code": "es"},
-            "components": [{
-                "type": "body",
-                "parameters": [
-                    {"type": "text", "text": nombre},
-                    {"type": "text", "text": str(citas_count)}
-                ]
-            }]
-        }
-    }
-    requests.post(url, json=payload, headers=headers)
+def obtener_servicio_calendar():
+    creds_json = os.environ.get('GOOGLE_TOKEN_JSON')
+    if not creds_json: raise ValueError("Error: No se encontró la variable GOOGLE_CREDENTIALS")
+    info = json.loads(creds_json)
+    creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+    return build('calendar', 'v3', credentials=creds)
 
-def job_enviar_reporte_doctores():
-    log_debug("Ejecutando proceso matutino de reportes para doctores...")
-    if not supabase: return
-    try:
-        doctores = supabase.table("Doctores").select("*").execute().data
-        hoy = datetime.datetime.now().strftime('%Y-%m-%d')
-        
-        for doc in doctores:
-            # 1. Validar si el doctor ya respondió hoy para no enviarle spam
-            # Nota: Asegúrate de tener una columna de fecha 'jornada_fecha' o similar en Supabase, 
-            # o evaluamos directamente si ya interactuó hoy.
-            if doc.get("jornada_respondida_fecha") == hoy:
-                log_debug(f"El doctor {doc.get('name')} ya respondió hoy. Omitiendo envío.")
-                continue
-
-            # Contar citas
-            cal_id = doc.get("calendar_id") or doc.get("email")
-            if not cal_id: continue
-            
-            # Obtener eventos
-            eventos_result = calendario.events().list(calendarId=cal_id, timeMin=f"{hoy}T00:00:00Z", timeMax=f"{hoy}T23:59:59Z", singleEvents=True).execute()
-            count = len(eventos_result.get('items', []))
-            
-            # Enviar plantilla
-            telefono_doc = "".join(filter(str.isdigit, str(doc.get("wa_link", ""))))
-            if telefono_doc and len(telefono_doc) >= 10:
-                enviar_plantilla_doctor(telefono_doc, doc.get("name", "Dr"), count)
-    except Exception as e:
-        log_debug(f"Error en job_enviar_reporte_doctores: {e}")
-
-# --- SCHEDULER ---
-scheduler = BackgroundScheduler()
-scheduler.add_job(job_enviar_reporte_doctores, 'cron', hour=7, minute=0)
-scheduler.start()
-# ---------------------------------------------
-
-def get_doctor_data(doctor_id="default"):
-    if supabase:
-        try:
-            response = supabase.table("Doctores").select("*").eq("id", doctor_id).execute()
-            if response.data and len(response.data) > 0:
-                row = response.data[0]
-                return {
-                    "id": str(row.get("id", "default")),
-                    "nombre": str(row.get("name") or row.get("nombre", "Psic. Gerardo Zamora")).strip(),
-                    "wa_link": str(row.get("wa_link") or row.get("link", "https://wa.me/527226293417")).strip(),
-                    "ocupation": str(row.get("ocupation", "Atención Psicológica")).strip(),
-                    "calendar_id": str(row.get("calendar_id") or row.get("email", "gerard24zam@gmail.com")).strip()
-                }
-        except Exception as e:
-            log_debug(f"Error consultando Supabase: {e}")
-    return {"id": "default", "nombre": "Psic. Gerardo Zamora", "wa_link": "https://wa.me/527226293417", "ocupation": "Atención Psicológica", "calendar_id": "gerard24zam@gmail.com"}
+calendario = obtener_servicio_calendar()
 
 def enviar_mensaje(telefono, tipo, contenido=None, template_params=None):
     headers = {"Authorization": f"Bearer {META_TOKEN}", "Content-Type": "application/json"}
@@ -122,18 +59,118 @@ def enviar_mensaje(telefono, tipo, contenido=None, template_params=None):
         
     try:
         resp = requests.post(url, json=payload, headers=headers)
+        log_debug(f"Respuesta Meta (Mensaje general): {resp.status_code} - {resp.text}")
         return resp
     except Exception as e:
+        log_debug(f"Error enviando mensaje: {e}")
         return None
 
-def obtener_servicio_calendar():
-    creds_json = os.environ.get('GOOGLE_TOKEN_JSON')
-    if not creds_json: raise ValueError("Error: No se encontró la variable GOOGLE_CREDENTIALS")
-    info = json.loads(creds_json)
-    creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
-    return build('calendar', 'v3', credentials=creds)
+def enviar_plantilla_doctor(telefono, nombre, citas_count):
+    headers = {"Authorization": f"Bearer {META_TOKEN}", "Content-Type": "application/json"}
+    url = f"https://graph.facebook.com/v17.0/{TELEFONO_ID_META}/messages"
+    payload = {
+        "messaging_product": "whatsapp", 
+        "to": telefono, 
+        "type": "template",
+        "template": {
+            "name": "jornada_doc", 
+            "language": {"code": "es_MX"},
+            "components": [{
+                "type": "body",
+                "parameters": [
+                    {"type": "text", "text": nombre},
+                    {"type": "text", "text": str(citas_count)}
+                ]
+            }]
+        }
+    }
+    try:
+        resp = requests.post(url, json=payload, headers=headers)
+        log_debug(f"Respuesta Meta (Doctor {nombre}): {resp.status_code} - {resp.text}")
+        return resp
+    except Exception as e:
+        log_debug(f"Error crítico en enviar_plantilla_doctor: {e}")
+        return None
 
-calendario = obtener_servicio_calendar()
+def job_enviar_reporte_doctores():
+    log_debug("INICIO: Ejecutando proceso matutino de reportes para doctores...")
+    if not supabase: 
+        log_debug("ERROR: Supabase no está inicializado.")
+        return
+    try:
+        doctores_res = supabase.table("Doctores").select("*").execute()
+        doctores = doctores_res.data
+        log_debug(f"Doctores encontrados en Supabase: {len(doctores) if doctores else 0}")
+        
+        if not doctores:
+            log_debug("ADVERTENCIA: La tabla 'Doctores' está vacía o no devolvió registros.")
+            return
+
+        hoy = datetime.datetime.now().strftime('%Y-%m-%d')
+        log_debug(f"Fecha actual evaluada: {hoy}")
+        
+        for doc in doctores:
+            doc_nombre = doc.get('name') or doc.get('nombre') or 'Sin nombre'
+            log_debug(f"--- Evaluando doctor: {doc_nombre} (ID: {doc.get('id')}) ---")
+
+            if doc.get("jornada_respondida_fecha") == hoy:
+                log_debug(f"-> OMITIDO: El doctor {doc_nombre} ya tiene 'jornada_respondida_fecha' registrado hoy ({hoy}).")
+                continue
+
+            cal_id = doc.get("calendar_id") or doc.get("email")
+            log_debug(f"-> Calendar ID / Email obtenido: {cal_id}")
+            if not cal_id: 
+                log_debug(f"-> OMITIDO: El doctor {doc_nombre} no tiene calendar_id ni email configurado.")
+                continue
+            
+            try:
+                eventos_result = calendario.events().list(
+                    calendarId=cal_id, 
+                    timeMin=f"{hoy}T00:00:00Z", 
+                    timeMax=f"{hoy}T23:59:59Z", 
+                    singleEvents=True
+                ).execute()
+                eventos = eventos_result.get('items', [])
+                count = len(eventos)
+                log_debug(f"-> Citas encontradas en el calendario de {doc_nombre}: {count}")
+            except Exception as e_cal:
+                log_debug(f"-> ERROR al consultar Google Calendar para {doc_nombre}: {e_cal}")
+                continue
+            
+            wa_raw = doc.get("wa_link") or doc.get("link") or ""
+            telefono_doc = "".join(filter(str.isdigit, str(wa_raw)))
+            log_debug(f"-> Teléfono limpio extraído de wa_link ('{wa_raw}'): '{telefono_doc}'")
+            
+            if telefono_doc and len(telefono_doc) >= 10:
+                log_debug(f"-> DISPARANDO: Enviando plantilla 'jornada_doc' a {telefono_doc} con {count} citas...")
+                enviar_plantilla_doctor(telefono_doc, doc_nombre, count)
+            else:
+                log_debug(f"-> OMITIDO: El teléfono del doctor {doc_nombre} es inválido o muy corto ({telefono_doc}).")
+
+    except Exception as e:
+        log_debug(f"Error crítico general en job_enviar_reporte_doctores: {e}")
+
+# --- SCHEDULER ---
+scheduler = BackgroundScheduler()
+scheduler.add_job(job_enviar_reporte_doctores, 'cron', hour=7, minute=0)
+scheduler.start()
+
+def get_doctor_data(doctor_id="default"):
+    if supabase:
+        try:
+            response = supabase.table("Doctores").select("*").eq("id", doctor_id).execute()
+            if response.data and len(response.data) > 0:
+                row = response.data[0]
+                return {
+                    "id": str(row.get("id", "default")),
+                    "nombre": str(row.get("name") or row.get("nombre", "Psic. Gerardo Zamora")).strip(),
+                    "wa_link": str(row.get("wa_link") or row.get("link", "https://wa.me/527226293417")).strip(),
+                    "ocupation": str(row.get("ocupation", "Atención Psicológica")).strip(),
+                    "calendar_id": str(row.get("calendar_id") or row.get("email", "gerard24zam@gmail.com")).strip()
+                }
+        except Exception as e:
+            log_debug(f"Error consultando Supabase: {e}")
+    return {"id": "default", "nombre": "Psic. Gerardo Zamora", "wa_link": "https://wa.me/527226293417", "ocupation": "Atención Psicológica", "calendar_id": "gerard24zam@gmail.com"}
 
 def limpiar_telefono(tel):
     return "".join(filter(str.isdigit, str(tel)))[-10:]
@@ -222,11 +259,14 @@ def notificar_resumen_doctor(doc_id):
     mensaje += f"\n\n❌ *Cancelados ({len(cancelados)}):*\n" + ("\n".join(cancelados) if cancelados else "Ninguno")
     enviar_mensaje(tel_doctor, "text", contenido=mensaje)
 
-# --- NUEVA RUTA PARA DISPARAR MANUALMENTE (PROTEGIDA) ---
+# --- RUTAS DE LA APLICACIÓN ---
+@app.route('/ejecutar-proceso-diario', methods=['POST'])
+def endpoint_proceso_diario():
+    job_enviar_reporte_doctores()
+    return jsonify({"status": "Proceso manual iniciado con éxito"}), 200
+
 @app.route('/disparar-reportes', methods=['POST'])
 def endpoint_disparar():
-    if request.headers.get("X-API-KEY") != API_KEY_SEGURIDAD:
-        return "Acceso denegado", 403
     job_enviar_reporte_doctores()
     return jsonify({"status": "Proceso manual iniciado con éxito"}), 200
 
@@ -248,7 +288,6 @@ def procesar_webhook_asincrono(data):
         tipo = msg.get('type')
         hoy = datetime.datetime.now().strftime('%Y-%m-%d')
         
-        # Lógica para botones de Doctor (Interactive)
         if tipo == 'interactive':
             btn_title = msg['interactive']['button_reply']['title']
             if supabase:
@@ -257,17 +296,13 @@ def procesar_webhook_asincrono(data):
                     tel_doc = "".join(filter(str.isdigit, str(doc.get("wa_link", ""))))
                     if tel_doc == telefono_origen:
                         estado = True if "Empecemos" in btn_title else False
-                        
-                        # Actualizamos estado y marcamos que YA respondió hoy para evitar spam
                         supabase.table("Doctores").update({
                             "is_active_today": estado,
                             "jornada_respondida_fecha": hoy
                         }).eq("id", doc['id']).execute()
-                        
                         enviar_mensaje(telefono_origen, "text", contenido=f"Jornada actualizada: {'Activa' if estado else 'Pausada'}")
                         break
         
-        # Lógica para pacientes (existente)
         elif tipo in ['text', 'button']:
             texto = msg.get('button', {}).get('text', '').lower() if tipo == 'button' else msg.get('text', {}).get('body', '').lower()
             if "si" in texto or "confirmo" in texto:
