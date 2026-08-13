@@ -333,13 +333,18 @@ def procesar_webhook_asincrono(data):
         tipo = msg.get('type')
         hoy = datetime.datetime.now().strftime('%Y-%m-%d')
         
+        # Normalizamos el teléfono de origen recibido por Meta a 10 dígitos
+        tel_origen_limpio = limpiar_telefono(telefono_origen)
+        
         if tipo == 'interactive':
             btn_title = msg['interactive']['button_reply']['title']
             if supabase:
                 doctores = supabase.table("Doctores").select("*").execute().data
                 for doc in doctores:
-                    tel_doc = "".join(filter(str.isdigit, str(doc.get("wa_link", ""))))
-                    if tel_doc == telefono_origen:
+                    # Normalizamos también el teléfono registrado en Supabase a 10 dígitos para que coincidan perfectamente
+                    tel_doc_limpio = limpiar_telefono(doc.get("wa_link", "") or doc.get("link", ""))
+                    
+                    if tel_doc_limpio and tel_doc_limpio == tel_origen_limpio:
                         estado = True if "Empecemos" in btn_title else False
                         supabase.table("Doctores").update({
                             "is_active_today": estado,
