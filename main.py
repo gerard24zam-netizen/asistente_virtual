@@ -42,6 +42,14 @@ calendario = obtener_servicio_calendar()
 def limpiar_telefono(tel):
     return "".join(filter(str.isdigit, str(tel)))[-10:]
 
+def extraer_nombre_limpio(titulo):
+    # Quita los emojis de estado
+    titulo_limpio = titulo.replace(' ✅', '').replace(' ❌', '').replace('✅', '').replace('❌', '').strip()
+    # Separa por espacios y descarta las palabras que sean puramente números (como el teléfono)
+    palabras = [p for p in titulo_limpio.split() if not p.isdigit()]
+    nombre = " ".join(palabras).strip()
+    return nombre if nombre else "Paciente"
+
 def enviar_mensaje(telefono, tipo, contenido=None, template_params=None):
     headers = {"Authorization": f"Bearer {META_TOKEN}", "Content-Type": "application/json"}
     url = f"https://graph.facebook.com/v17.0/{TELEFONO_ID_META}/messages"
@@ -112,10 +120,7 @@ def procesar_desde_supabase():
             
             if len(digitos) >= 10:
                 telefono_paciente = "52" + digitos[-10:]
-                
-                nombre_paciente = re.sub(r'\d+', '', titulo).strip()
-                if not nombre_paciente or len(nombre_paciente) < 2:
-                    nombre_paciente = "Paciente"
+                nombre_paciente = extraer_nombre_limpio(titulo)
 
                 start_dt = evento.get('start', {}).get('dateTime', '')
                 hora_str = "10:00 am"
@@ -171,10 +176,8 @@ def marcar_evento_calendario(telefono_recibido, accion):
                 texto_completo = f"{titulo} {descripcion}"
                 
                 if tel_buscado in limpiar_telefono(texto_completo):
+                    nombre_paciente = extraer_nombre_limpio(titulo)
                     titulo_limpio = titulo.replace(' ✅', '').replace(' ❌', '').replace('✅', '').replace('❌', '').strip()
-                    nombre_paciente = re.sub(r'\d+', '', titulo_limpio).strip()
-                    if not nombre_paciente or len(nombre_paciente) < 2:
-                        nombre_paciente = titulo_limpio if titulo_limpio else "Paciente"
 
                     if simbolo in titulo:
                         return doc, nombre_paciente
