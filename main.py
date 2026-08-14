@@ -106,8 +106,16 @@ def job_enviar_reporte_doctores():
             log_debug("ADVERTENCIA: La tabla 'Doctores' está vacía o no devolvió registros.")
             return
 
-        hoy = datetime.datetime.now().strftime('%Y-%m-%d')
-        log_debug(f"Fecha actual evaluada: {hoy}")
+        zona_mexico = pytz.timezone('America/Mexico_City')
+        ahora_mexico = datetime.datetime.now(zona_mexico)
+        inicio_mexico = ahora_mexico.replace(hour=0, minute=0, second=0, microsecond=0)
+        fin_mexico = ahora_mexico.replace(hour=23, minute=59, second=59, microsecond=0)
+        
+        inicio = inicio_mexico.astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
+        fin = fin_mexico.astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
+        
+        hoy = ahora_mexico.strftime('%Y-%m-%d')
+        log_debug(f"Fecha actual evaluada (México): {hoy}")
         
         for doc in doctores:
             doc_nombre = doc.get('name') or doc.get('nombre') or 'Sin nombre'
@@ -126,8 +134,8 @@ def job_enviar_reporte_doctores():
             try:
                 eventos_result = calendario.events().list(
                     calendarId=cal_id, 
-                    timeMin=f"{hoy}T00:00:00Z", 
-                    timeMax=f"{hoy}T23:59:59Z", 
+                    timeMin=inicio, 
+                    timeMax=fin, 
                     singleEvents=True
                 ).execute()
                 eventos = eventos_result.get('items', [])
@@ -208,30 +216,43 @@ def extraer_datos_evento(evento, doc_default_id):
 
 def extraer_telefono_paciente(evento):
     texto = evento.get('summary', '') + " " + evento.get('description', '')
-    matches = re.findall(r'(?:\+?52)?\s*(\d{10})', texto)
-    for m in matches:
-        tel_limpio = "".join(filter(str.isdigit, m))
-        if len(tel_limpio) >= 10:
-            return tel_limpio[-10:]
+    # Búsqueda robusta que tolera espacios o guiones entre los dígitos del teléfono mexicano
+    posibles = re.findall(r'(?:\+?52)?\s*(\d{2,3})[\s-]?(\d{3,4})[\s-]?(\d{4})', texto)
+    for p in posibles:
+        num_completo = "".join(p)
+        if len(num_completo) == 10:
+            return num_completo
     return None
 
 def enviar_recordatorios_a_pacientes(doc, hoy):
     cal_id = doc.get("calendar_id") or doc.get("email")
-    if not cal_id: return
+    if not cal_id: 
+        log_debug(f"-> OMITIDO Pacientes: Doctor {doc.get('name')} sin calendar_id.")
+        return
     
     try:
+        zona_mexico = pytz.timezone('America/Mexico_City')
+        ahora_mexico = datetime.datetime.now(zona_mexico)
+        inicio_mexico = ahora_mexico.replace(hour=0, minute=0, second=0, microsecond=0)
+        fin_mexico = ahora_mexico.replace(hour=23, minute=59, second=59, microsecond=0)
+        
+        inicio = inicio_mexico.astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
+        fin = fin_mexico.astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
+
         eventos_result = calendario.events().list(
             calendarId=cal_id, 
-            timeMin=f"{hoy}T00:00:00Z", 
-            timeMax=f"{hoy}T23:59:59Z", 
+            timeMin=inicio, 
+            timeMax=fin, 
             singleEvents=True
         ).execute()
         eventos = eventos_result.get('items', [])
+        log_debug(f"-> Evaluando {len(eventos)} eventos de calendario para pacientes de {doc.get('name')}")
         
         contador_enviados = 0
         for evento in eventos:
             p_nombre, _ = extraer_datos_evento(evento, doc['id'])
             tel_paciente = extraer_telefono_paciente(evento)
+            log_debug(f"-> Evento analizado: '{evento.get('summary')}' | Paciente: {p_nombre} | Teléfono extraído: {tel_paciente}")
             
             if tel_paciente and len(tel_paciente) >= 10:
                 registrar_recordatorio_activo(tel_paciente, doc['id'])
@@ -239,13 +260,17 @@ def enviar_recordatorios_a_pacientes(doc, hoy):
                 resp = enviar_mensaje(tel_paciente, "template", template_params=params)
                 if resp and resp.status_code in [200, 201]:
                     contador_enviados += 1
-                    log_debug(f"Recordatorio enviado exitosamente al paciente {p_nombre} ({tel_paciente})")
+                    log_debug(f"✅ Recordatorio enviado exitosamente al paciente {p_nombre} ({tel_paciente})")
+                else:
+                    log_debug(f"❌ Error enviando a Meta para el paciente {p_nombre} ({tel_paciente})")
+            else:
+                log_debug(f"⚠️ No se encontró un teléfono válido de 10 dígitos en el evento: '{evento.get('summary')}'")
         
         tel_doc = "".join(filter(str.isdigit, str(doc.get("wa_link", ""))))
         if tel_doc:
             enviar_mensaje(tel_doc, "text", contenido=f"📊 Se han enviado {contador_enviados} recordatorios de cita a los pacientes programados para hoy.")
     except Exception as e:
-        log_debug(f"Error enviando recordatorios a pacientes: {e}")
+        log_debug(f"Error crítico enviando recordatorios a pacientes: {e}")
 
 def marcar_evento(telefono_recibido, accion):
     tel_buscado = limpiar_telefono(telefono_recibido)
@@ -315,8 +340,10 @@ def endpoint_proceso_diario():
             log_debug("ADVERTENCIA: No hay doctores registrados para enviar recordatorios a pacientes.")
             return jsonify({"status": "Sin doctores"}), 200
 
-        hoy = datetime.datetime.now().strftime('%Y-%m-%d')
-        log_debug(f"Fecha evaluada para pacientes: {hoy}")
+        zona_mexico = pytz.timezone('America/Mexico_City')
+        ahora_mexico = datetime.datetime.now(zona_mexico)
+        hoy = ahora_mexico.strftime('%Y-%m-%d')
+        log_debug(f"Fecha evaluada para pacientes (México): {hoy}")
 
         for doc in doctores:
             doc_nombre = doc.get('name') or doc.get('nombre') or 'Sin nombre'
@@ -353,7 +380,9 @@ def procesar_webhook_asincrono(data):
         msg = value['messages'][0]
         telefono_origen = msg.get('from')
         tipo = msg.get('type')
-        hoy = datetime.datetime.now().strftime('%Y-%m-%d')
+        
+        zona_mexico = pytz.timezone('America/Mexico_City')
+        hoy = datetime.datetime.now(zona_mexico).strftime('%Y-%m-%d')
         
         tel_origen_limpio = limpiar_telefono(telefono_origen)
         
