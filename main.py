@@ -253,7 +253,7 @@ def procesar_webhook_asincrono(data):
                     enviar_mensaje(telefono_cliente, "text", contenido=resp_doc)
                     return
                 elif any(k in texto for k in ["hoy no trabajo", "no trabajo", "descanso"]):
-                    resp_doc = f"Siempre es bueno tomarse el día para darse un respiro, bajar el cortisol y despejar la mente, que descanse {doc_nombre}. Hasta mañana *Stein tu Asistente Virtual*"
+                    resp_doc = f"Siempre es bueno tomarse el día para darse un respiro, bajar el cortisol y despejar la mente, que descanse *{doc_nombre}*. Hasta mañana *Stein tu Asistente Virtual*"
                     enviar_mensaje(telefono_cliente, "text", contenido=resp_doc)
                     return
 
