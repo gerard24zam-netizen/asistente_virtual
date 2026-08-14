@@ -24,6 +24,8 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 
+RECORDATORIOS_ACTIVOS_MEMORIA = {}
+
 def log_debug(mensaje):
     print(f"DEBUG: {mensaje}", flush=True)
 
@@ -36,21 +38,42 @@ def obtener_servicio_calendar():
 
 calendario = obtener_servicio_calendar()
 
-# --- FUNCIONES DE EXTRACCIÓN MEJORADAS ---
+# --- FUNCIONES DE EXTRACCIÓN ---
 def extraer_telefono_paciente(evento):
     """Limpia el texto y extrae el número de 10 dígitos de forma robusta."""
-    texto = f"{evento.get('summary', '')} {evento.get('description', '')}"
-    # Eliminar guiones, espacios, paréntesis, etc.
+    texto = f"{evento.get('summary', '')} {evento.get('description', '')} {evento.get('location', '')}"
     clean_text = re.sub(r'[\s\-\(\)\+]', '', texto)
     
-    # Buscar patrones: opcionalmente empieza con 52 o 521, seguido de 10 dígitos
-    # Buscamos los últimos 10 dígitos después de eliminar prefijos comunes
     match = re.search(r'(?:521?)?(\d{10})', clean_text)
     if match:
-        telefono = match.group(1)
-        return telefono
+        return match.group(1)
+        
+    digitos = "".join(filter(str.isdigit, texto))
+    if len(digitos) >= 10:
+        if digitos.startswith("52") and len(digitos) >= 12:
+            idx = 3 if len(digitos) >= 13 and digitos[2] == '1' else 2
+            return digitos[idx:idx+10]
+        return digitos[-10:]
     return None
 
+def extraer_nombre_paciente(evento):
+    titulo = evento.get('summary', '')
+    match_parentesis = re.search(r'\(([^)]+)\)', titulo)
+    if match_parentesis:
+        texto_interior = match_parentesis.group(1).strip()
+        if texto_interior.lower() not in ['atención psicológica', 'atencion psicologica', 'consulta', 'cita']:
+            return texto_interior
+    return "Paciente"
+
+def limpiar_telefono(tel):
+    return "".join(filter(str.isdigit, str(tel)))[-10:]
+
+def registrar_recordatorio_activo(telefono, doctor_id):
+    if not telefono or not doctor_id: return
+    tel_limpio = limpiar_telefono(telefono)
+    RECORDATORIOS_ACTIVOS_MEMORIA[tel_limpio] = str(doctor_id)
+
+# --- FUNCIONES DE ENVÍO DE MENSAJES ---
 def enviar_mensaje(telefono, tipo, contenido=None, template_params=None):
     headers = {"Authorization": f"Bearer {META_TOKEN}", "Content-Type": "application/json"}
     url = f"https://graph.facebook.com/v17.0/{TELEFONO_ID_META}/messages"
@@ -68,9 +91,37 @@ def enviar_mensaje(telefono, tipo, contenido=None, template_params=None):
         
     try:
         resp = requests.post(url, json=payload, headers=headers)
+        log_debug(f"Respuesta Meta (General): {resp.status_code} - {resp.text}")
         return resp
     except Exception as e:
         log_debug(f"Error en envío: {e}")
+        return None
+
+def enviar_plantilla_doctor(telefono, nombre, citas_count):
+    headers = {"Authorization": f"Bearer {META_TOKEN}", "Content-Type": "application/json"}
+    url = f"https://graph.facebook.com/v17.0/{TELEFONO_ID_META}/messages"
+    payload = {
+        "messaging_product": "whatsapp", 
+        "to": telefono, 
+        "type": "template",
+        "template": {
+            "name": "jornada_doc", 
+            "language": {"code": "es_MX"},
+            "components": [{
+                "type": "body",
+                "parameters": [
+                    {"type": "text", "text": nombre},
+                    {"type": "text", "text": str(citas_count)}
+                ]
+            }]
+        }
+    }
+    try:
+        resp = requests.post(url, json=payload, headers=headers)
+        log_debug(f"Respuesta Meta (Doctor {nombre}): {resp.status_code} - {resp.text}")
+        return resp
+    except Exception as e:
+        log_debug(f"Error en enviar_plantilla_doctor: {e}")
         return None
 
 def enviar_recordatorios_a_pacientes(doc, hoy):
@@ -79,7 +130,7 @@ def enviar_recordatorios_a_pacientes(doc, hoy):
     
     zona_mexico = pytz.timezone('America/Mexico_City')
     inicio_mexico = datetime.datetime.now(zona_mexico).replace(hour=0, minute=0, second=0, microsecond=0)
-    fin_mexico = ahora_mexico = datetime.datetime.now(zona_mexico).replace(hour=23, minute=59, second=59, microsecond=0)
+    fin_mexico = datetime.datetime.now(zona_mexico).replace(hour=23, minute=59, second=59, microsecond=0)
     
     inicio = inicio_mexico.astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
     fin = fin_mexico.astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
@@ -89,18 +140,21 @@ def enviar_recordatorios_a_pacientes(doc, hoy):
     contador = 0
     for evento in eventos:
         tel = extraer_telefono_paciente(evento)
-        nombre = "Paciente" # Se puede mejorar la extracción de nombre aquí
+        p_nombre = extraer_nombre_paciente(evento)
         
         if tel and len(tel) == 10:
-            params = [{"type": "text", "text": nombre}]
+            registrar_recordatorio_activo(tel, doc['id'])
+            params = [{"type": "text", "text": p_nombre}]
             resp = enviar_mensaje(tel, "template", template_params=params)
             if resp and resp.status_code in [200, 201]:
                 contador += 1
-                log_debug(f"✅ Enviado a {tel}")
+                log_debug(f"✅ Recordatorio enviado exitosamente al paciente {p_nombre} ({tel})")
+            else:
+                log_debug(f"❌ Error enviando a Meta para el paciente {p_nombre} ({tel})")
         else:
-            log_debug(f"⚠️ No se pudo extraer teléfono válido de: {evento.get('summary')}")
+            log_debug(f"⚠️ No se pudo extraer teléfono válido del evento: {evento.get('summary')}")
             
-    # Notificar al doctor
+    # Notificar resumen al doctor
     tel_doc = "".join(filter(str.isdigit, str(doc.get("wa_link", ""))))
     if tel_doc:
         enviar_mensaje(tel_doc, "text", contenido=f"📊 Se han enviado {contador} recordatorios de cita a los pacientes programados para hoy.")
@@ -108,22 +162,58 @@ def enviar_recordatorios_a_pacientes(doc, hoy):
 # --- ENDPOINTS ---
 @app.route('/disparar-reportes', methods=['POST'])
 def endpoint_disparar_reportes():
-    log_debug("Iniciando jornada...")
+    log_debug("Iniciando jornada matutina...")
+    if not supabase:
+        return jsonify({"status": "Error: Supabase no inicializado"}), 500
+    
     try:
         doctores = supabase.table("Doctores").select("*").execute().data
+        if not doctores:
+            return jsonify({"status": "Sin doctores"}), 200
+
+        zona_mexico = pytz.timezone('America/Mexico_City')
+        inicio_mexico = datetime.datetime.now(zona_mexico).replace(hour=0, minute=0, second=0, microsecond=0)
+        fin_mexico = datetime.datetime.now(zona_mexico).replace(hour=23, minute=59, second=59, microsecond=0)
+        
+        inicio = inicio_mexico.astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
+        fin = fin_mexico.astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
+        hoy = datetime.datetime.now(zona_mexico).strftime('%Y-%m-%d')
+        
         for doc in doctores:
-            # 1. Reporte al doctor
-            # ... (código previo para reporte doc)
-            # 2. Recordatorios pacientes
-            enviar_recordatorios_a_pacientes(doc, "")
-        return jsonify({"status": "ok"}), 200
+            doc_nombre = doc.get('name') or doc.get('nombre') or 'Psic. Gerardo Zamora'
+            cal_id = doc.get("calendar_id") or doc.get("email")
+            if not cal_id: continue
+            
+            try:
+                eventos = calendario.events().list(calendarId=cal_id, timeMin=inicio, timeMax=fin, singleEvents=True).execute().get('items', [])
+                count = len(eventos)
+            except:
+                count = 0
+            
+            wa_raw = doc.get("wa_link") or doc.get("link") or ""
+            telefono_doc = "".join(filter(str.isdigit, str(wa_raw)))
+            
+            if telefono_doc and len(telefono_doc) >= 10:
+                # 1. Enviar plantilla interactiva al doctor
+                enviar_plantilla_doctor(telefono_doc, doc_nombre, count)
+                log_debug(f"✅ Reporte enviado al doctor {doc_nombre} con {count} citas.")
+                
+                # 2. Enviar recordatorios a los pacientes
+                enviar_recordatorios_a_pacientes(doc, hoy)
+
+        return jsonify({"status": "Rutina ejecutada con éxito"}), 200
     except Exception as e:
+        log_debug(f"Error crítico en endpoint: {e}")
         return jsonify({"status": str(e)}), 500
+
+@app.route('/ejecutar-proceso-diario', methods=['POST'])
+def endpoint_proceso_diario():
+    return endpoint_disparar_reportes()
 
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
     if request.method == 'GET':
-        if request.args.get("hub.verify_token") == "TOKEN_SECRETO_META": return request.args.get("hub.challenge")
+        if request.args.get("hub.verify_token") == VERIFY_TOKEN: return request.args.get("hub.challenge")
         return "Forbidden", 403
     return "OK", 200
 
