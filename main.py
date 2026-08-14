@@ -263,7 +263,7 @@ def procesar_webhook_asincrono(data):
                 if doc:
                     doc_nombre = doc.get("name") or doc.get("nombre") or "Doctor"
                     wa_link = doc.get("wa_link") or doc.get("link") or ""
-                    respuesta_texto = f"Perfecto, hemos confirmado tu cita para el día de hoy con {doc_nombre}. Dudas o aclaraciones, comunícate aquí: {wa_link}"
+                    respuesta_texto = f"*¡Perfecto!* Se ha confirmado tu cita de hoy con {doc_nombre}. Dudas o aclaraciones, comunícate aquí: {wa_link}"
                     enviar_mensaje(telefono_cliente, "text", contenido=respuesta_texto)
                     
                     tel_doc = "".join(filter(str.isdigit, str(wa_link)))
@@ -275,7 +275,7 @@ def procesar_webhook_asincrono(data):
                 if doc:
                     doc_nombre = doc.get("name") or doc.get("nombre") or "Doctor"
                     wa_link = doc.get("wa_link") or doc.get("link") or ""
-                    respuesta_texto = f"Entendido. Para reagendar, comunícate con {doc_nombre} aquí: {wa_link}"
+                    respuesta_texto = f"*Se ha cancelado tu cita.* Para reagendar tu cita, por favor comunícate con {doc_nombre} aquí: {wa_link}."
                     enviar_mensaje(telefono_cliente, "text", contenido=respuesta_texto)
                     
                     tel_doc = "".join(filter(str.isdigit, str(wa_link)))
