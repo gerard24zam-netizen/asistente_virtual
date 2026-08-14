@@ -43,14 +43,12 @@ def limpiar_telefono(tel):
     return "".join(filter(str.isdigit, str(tel)))[-10:]
 
 def extraer_nombre_limpio(titulo):
-    # Quita los emojis de estado
     titulo_limpio = titulo.replace(' ✅', '').replace(' ❌', '').replace('✅', '').replace('❌', '').strip()
-    # Separa por espacios y descarta las palabras que sean puramente números (como el teléfono)
     palabras = [p for p in titulo_limpio.split() if not p.isdigit()]
     nombre = " ".join(palabras).strip()
     return nombre if nombre else "Paciente"
 
-def enviar_mensaje(telefono, tipo, contenido=None, template_params=None):
+def enviar_mensaje(telefono, tipo, contenido=None, template_params=None, template_name="confirmacion_cita"):
     headers = {"Authorization": f"Bearer {META_TOKEN}", "Content-Type": "application/json"}
     url = f"https://graph.facebook.com/v17.0/{TELEFONO_ID_META}/messages"
     
@@ -58,7 +56,7 @@ def enviar_mensaje(telefono, tipo, contenido=None, template_params=None):
         payload = {
             "messaging_product": "whatsapp", "to": telefono, "type": "template",
             "template": {
-                "name": "confirmacion_cita", "language": {"code": "es_MX"},
+                "name": template_name, "language": {"code": "es_MX"},
                 "components": [{"type": "body", "parameters": template_params}]
             }
         }
@@ -101,6 +99,8 @@ def procesar_desde_supabase():
 
         doc_nombre = doc.get("name") or doc.get("nombre") or "Dr. Gerardo"
         doc_ocupacion = doc.get("ocupation") or "Atención Psicológica"
+        wa_link = doc.get("wa_link") or doc.get("link") or ""
+        tel_doc = "".join(filter(str.isdigit, str(wa_link)))
 
         try:
             eventos = calendario.events().list(calendarId=cal_id, timeMin=inicio, timeMax=fin, singleEvents=True).execute().get('items', [])
@@ -108,6 +108,18 @@ def procesar_desde_supabase():
             log(f"Error leyendo calendario {cal_id}: {e}")
             continue
 
+        # 1. Enviar la plantilla jornada_doc al doctor con su reporte matutino y total de citas
+        total_citas_doc = len(eventos)
+        if tel_doc:
+            params_jornada_doc = [
+                {"type": "text", "text": doc_nombre},
+                {"type": "text", "text": str(total_citas_doc)}
+            ]
+            resp_doc = enviar_mensaje(tel_doc, "template", template_params=params_jornada_doc, template_name="jornada_doc")
+            if resp_doc and resp_doc.status_code < 400:
+                log(f"Plantilla jornada_doc enviada exitosamente al doctor {doc_nombre}")
+
+        # 2. Procesar y enviar recordatorios a los pacientes (Lógica intacta)
         for evento in eventos:
             titulo = evento.get('summary', '')
             descripcion = evento.get('description', '')
@@ -139,10 +151,10 @@ def procesar_desde_supabase():
                     {"type": "text", "text": doc_nombre}
                 ]
 
-                resp = enviar_mensaje(telefono_paciente, "template", template_params=params)
+                resp = enviar_mensaje(telefono_paciente, "template", template_params=params, template_name="confirmacion_cita")
                 if resp and resp.status_code < 400:
                     total_enviados += 1
-                    log(f"Recordatorio enviado a {telefono_paciente}")
+                    log(f"Recordatorio enviado a paciente {telefono_paciente}")
 
     return jsonify({"status": "ok", "enviados": total_enviados}), 200
 
