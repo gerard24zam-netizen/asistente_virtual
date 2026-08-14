@@ -144,7 +144,7 @@ def procesar_desde_supabase():
 def marcar_evento_calendario(telefono_recibido, accion):
     tel_buscado = limpiar_telefono(telefono_recibido)
     if not supabase or not calendario:
-        return
+        return None, None
     
     try:
         response = supabase.table("Doctores").select("*").execute()
@@ -171,10 +171,14 @@ def marcar_evento_calendario(telefono_recibido, accion):
                 texto_completo = f"{titulo} {descripcion}"
                 
                 if tel_buscado in limpiar_telefono(texto_completo):
-                    if simbolo in titulo:
-                        return doc
-                    
                     titulo_limpio = titulo.replace(' ✅', '').replace(' ❌', '').replace('✅', '').replace('❌', '').strip()
+                    nombre_paciente = re.sub(r'\d+', '', titulo_limpio).strip()
+                    if not nombre_paciente or len(nombre_paciente) < 2:
+                        nombre_paciente = titulo_limpio if titulo_limpio else "Paciente"
+
+                    if simbolo in titulo:
+                        return doc, nombre_paciente
+                    
                     nuevo_titulo = f"{titulo_limpio} {simbolo}"
                     
                     calendario.events().patch(
@@ -183,10 +187,10 @@ def marcar_evento_calendario(telefono_recibido, accion):
                         body={'summary': nuevo_titulo}
                     ).execute()
                     log(f"¡Calendario actualizado con {simbolo} para el evento: {nuevo_titulo}!")
-                    return doc
+                    return doc, nombre_paciente
         except Exception as e:
             log(f"Error actualizando calendario {cal_id}: {e}")
-    return None
+    return None, None
 
 def procesar_webhook_asincrono(data):
     try:
@@ -204,20 +208,19 @@ def procesar_webhook_asincrono(data):
             log(f"Mensaje recibido de {telefono_cliente}: {texto}")
 
             if any(k in texto for k in ["si", "sí", "confirmo", "confirmar"]):
-                doc = marcar_evento_calendario(telefono_cliente, 'confirmar')
+                doc, nombre_paciente = marcar_evento_calendario(telefono_cliente, 'confirmar')
                 if doc:
                     doc_nombre = doc.get("name") or doc.get("nombre") or "Doctor"
                     wa_link = doc.get("wa_link") or doc.get("link") or ""
                     respuesta_texto = f"Perfecto, hemos confirmado tu cita para el día de hoy con {doc_nombre}. Dudas o aclaraciones, comunícate aquí: {wa_link}"
                     enviar_mensaje(telefono_cliente, "text", contenido=respuesta_texto)
                     
-                    # Notificar al doctor si tiene número
                     tel_doc = "".join(filter(str.isdigit, str(wa_link)))
                     if tel_doc:
-                        enviar_mensaje(tel_doc, "text", contenido=f"✅ Un paciente ha confirmado su cita de hoy.")
+                        enviar_mensaje(tel_doc, "text", contenido=f"✅ El paciente {nombre_paciente} ha confirmado su cita de hoy.")
 
             elif any(k in texto for k in ["no", "reagendar", "cancelar"]):
-                doc = marcar_evento_calendario(telefono_cliente, 'reagendar')
+                doc, nombre_paciente = marcar_evento_calendario(telefono_cliente, 'reagendar')
                 if doc:
                     doc_nombre = doc.get("name") or doc.get("nombre") or "Doctor"
                     wa_link = doc.get("wa_link") or doc.get("link") or ""
@@ -226,7 +229,7 @@ def procesar_webhook_asincrono(data):
                     
                     tel_doc = "".join(filter(str.isdigit, str(wa_link)))
                     if tel_doc:
-                        enviar_mensaje(tel_doc, "text", contenido=f"❌ Un paciente indicó que necesita reagendar su cita de hoy.")
+                        enviar_mensaje(tel_doc, "text", contenido=f"❌ El paciente {nombre_paciente} indicó que necesita reagendar su cita de hoy.")
     except Exception as e:
         log(f"Error en webhook asíncrono: {e}")
 
