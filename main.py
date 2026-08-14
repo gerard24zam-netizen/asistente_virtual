@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import requests
 import datetime
 import pytz
@@ -63,7 +64,6 @@ def procesar_desde_supabase():
         return jsonify({"error": "Falta configuración de Supabase o Google Calendar"}), 500
 
     try:
-        # Lee los calendarios directamente desde Supabase
         response = supabase.table("Doctores").select("*").execute()
         doctores = response.data if response.data else []
     except Exception as e:
@@ -78,7 +78,6 @@ def procesar_desde_supabase():
     total_enviados = 0
 
     for doc in doctores:
-        # Obtiene el ID del calendario desde Supabase (busca calendar_id o email)
         cal_id = doc.get("calendar_id") or doc.get("email")
         if not cal_id:
             continue
@@ -96,7 +95,6 @@ def procesar_desde_supabase():
             titulo = evento.get('summary', '')
             descripcion = evento.get('description', '')
             
-            # Filtra si ya está confirmado o cancelado
             if "✅" in titulo or "❌" in titulo:
                 continue
 
@@ -106,12 +104,10 @@ def procesar_desde_supabase():
             if len(digitos) >= 10:
                 telefono_paciente = "52" + digitos[-10:]
                 
-                # Extraer nombre limpio del paciente del título (quitando números)
                 nombre_paciente = re.sub(r'\d+', '', titulo).strip()
                 if not nombre_paciente or len(nombre_paciente) < 2:
                     nombre_paciente = "Paciente"
 
-                # Obtener la hora del evento
                 start_dt = evento.get('start', {}).get('dateTime', '')
                 hora_str = "10:00 am"
                 if start_dt:
