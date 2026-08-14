@@ -253,10 +253,10 @@ def notificar_resumen_doctor(doc_id):
     mensaje += f"\n\n❌ *Cancelados ({len(cancelados)}):*\n" + ("\n".join(cancelados) if cancelados else "Ninguno")
     enviar_mensaje(tel_doctor, "text", contenido=mensaje)
 
-# --- RUTAS SEPARADAS PARA DOCTORES Y PACIENTES ---
+# --- RUTA PRINCIPAL UNIFICADA (DISPARA DOCTOR Y PACIENTES AUTOMÁTICAMENTE) ---
 @app.route('/disparar-reportes', methods=['POST'])
 def endpoint_disparar_reportes_doctor():
-    log_debug("INICIO: Ejecutando reporte matutino exclusivamente para doctores...")
+    log_debug("INICIO: Ejecutando rutina matutina completa (Doctores y Pacientes)...")
     if not supabase:
         return jsonify({"status": "Error: Supabase no inicializado"}), 500
     
@@ -273,6 +273,7 @@ def endpoint_disparar_reportes_doctor():
         
         inicio = inicio_mexico.astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
         fin = fin_mexico.astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
+        hoy = ahora_mexico.strftime('%Y-%m-%d')
         
         for doc in doctores:
             doc_nombre = doc.get('name') or doc.get('nombre') or 'Sin nombre'
@@ -283,7 +284,8 @@ def endpoint_disparar_reportes_doctor():
                 eventos_result = calendario.events().list(
                     calendarId=cal_id, timeMin=inicio, timeMax=fin, singleEvents=True
                 ).execute()
-                count = len(eventos_result.get('items', []))
+                eventos = eventos_result.get('items', [])
+                count = len(eventos)
             except:
                 count = 0
             
@@ -291,37 +293,23 @@ def endpoint_disparar_reportes_doctor():
             telefono_doc = "".join(filter(str.isdigit, str(wa_raw)))
             
             if telefono_doc and len(telefono_doc) >= 10:
+                # 1. Enviar plantilla de reporte al doctor
                 enviar_plantilla_doctor(telefono_doc, doc_nombre, count)
                 log_debug(f"✅ Reporte enviado al doctor {doc_nombre} con {count} citas.")
+                
+                # 2. Enviar automáticamente los recordatorios a los pacientes de este doctor
+                log_debug(f"-> Disparando recordatorios a pacientes para {doc_nombre}...")
+                enviar_recordatorios_a_pacientes(doc, hoy)
 
-        return jsonify({"status": "Reporte de doctores enviado con éxito"}), 200
+        return jsonify({"status": "Rutina matutina completa ejecutada con éxito"}), 200
     except Exception as e:
-        log_debug(f"Error en endpoint_disparar_reportes_doctor: {e}")
+        log_debug(f"Error crítico en endpoint matutino: {e}")
         return jsonify({"status": f"Error: {e}"}), 500
 
 @app.route('/ejecutar-proceso-diario', methods=['POST'])
 def endpoint_proceso_diario_pacientes():
-    log_debug("INICIO: Ejecutando proceso masivo de recordatorios para pacientes...")
-    if not supabase:
-        return jsonify({"status": "Error: Supabase no inicializado"}), 500
-    
-    try:
-        doctores_res = supabase.table("Doctores").select("*").execute()
-        doctores = doctores_res.data
-        if not doctores:
-            return jsonify({"status": "Sin doctores"}), 200
-
-        zona_mexico = pytz.timezone('America/Mexico_City')
-        ahora_mexico = datetime.datetime.now(zona_mexico)
-        hoy = ahora_mexico.strftime('%Y-%m-%d')
-
-        for doc in doctores:
-            enviar_recordatorios_a_pacientes(doc, hoy)
-
-        return jsonify({"status": "Recordatorios a pacientes ejecutados con éxito"}), 200
-    except Exception as e:
-        log_debug(f"Error en endpoint_proceso_diario_pacientes: {e}")
-        return jsonify({"status": f"Error: {e}"}), 500
+    # Mantenemos esta ruta por compatibilidad si Apps Script la llama por separado
+    return endpoint_disparar_reportes_doctor()
 
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
