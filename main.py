@@ -92,77 +92,6 @@ def enviar_plantilla_doctor(telefono, nombre, citas_count):
         log_debug(f"Error crítico en enviar_plantilla_doctor: {e}")
         return None
 
-def job_enviar_reporte_doctores():
-    log_debug("INICIO: Ejecutando proceso matutino de reportes para doctores...")
-    if not supabase: 
-        log_debug("ERROR: Supabase no está inicializado.")
-        return
-    try:
-        doctores_res = supabase.table("Doctores").select("*").execute()
-        doctores = doctores_res.data
-        log_debug(f"Doctores encontrados en Supabase: {len(doctores) if doctores else 0}")
-        
-        if not doctores:
-            log_debug("ADVERTENCIA: La tabla 'Doctores' está vacía o no devolvió registros.")
-            return
-
-        zona_mexico = pytz.timezone('America/Mexico_City')
-        ahora_mexico = datetime.datetime.now(zona_mexico)
-        inicio_mexico = ahora_mexico.replace(hour=0, minute=0, second=0, microsecond=0)
-        fin_mexico = ahora_mexico.replace(hour=23, minute=59, second=59, microsecond=0)
-        
-        inicio = inicio_mexico.astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
-        fin = fin_mexico.astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
-        
-        hoy = ahora_mexico.strftime('%Y-%m-%d')
-        log_debug(f"Fecha actual evaluada (México): {hoy}")
-        
-        for doc in doctores:
-            doc_nombre = doc.get('name') or doc.get('nombre') or 'Sin nombre'
-            log_debug(f"--- Evaluando doctor: {doc_nombre} (ID: {doc.get('id')}) ---")
-
-            if doc.get("jornada_respondida_fecha") == hoy:
-                log_debug(f"-> OMITIDO: El doctor {doc_nombre} ya tiene 'jornada_respondida_fecha' registrado hoy ({hoy}).")
-                continue
-
-            cal_id = doc.get("calendar_id") or doc.get("email")
-            log_debug(f"-> Calendar ID / Email obtenido: {cal_id}")
-            if not cal_id: 
-                log_debug(f"-> OMITIDO: El doctor {doc_nombre} no tiene calendar_id ni email configurado.")
-                continue
-            
-            try:
-                eventos_result = calendario.events().list(
-                    calendarId=cal_id, 
-                    timeMin=inicio, 
-                    timeMax=fin, 
-                    singleEvents=True
-                ).execute()
-                eventos = eventos_result.get('items', [])
-                count = len(eventos)
-                log_debug(f"-> Citas encontradas en el calendario de {doc_nombre}: {count}")
-            except Exception as e_cal:
-                log_debug(f"-> ERROR al consultar Google Calendar para {doc_nombre}: {e_cal}")
-                continue
-            
-            wa_raw = doc.get("wa_link") or doc.get("link") or ""
-            telefono_doc = "".join(filter(str.isdigit, str(wa_raw)))
-            log_debug(f"-> Teléfono limpio extraído de wa_link ('{wa_raw}'): '{telefono_doc}'")
-            
-            if telefono_doc and len(telefono_doc) >= 10:
-                log_debug(f"-> DISPARANDO: Enviando plantilla 'jornada_doc' a {telefono_doc} con {count} citas...")
-                enviar_plantilla_doctor(telefono_doc, doc_nombre, count)
-            else:
-                log_debug(f"-> OMITIDO: El teléfono del doctor {doc_nombre} es inválido o muy corto ({telefono_doc}).")
-
-    except Exception as e:
-        log_debug(f"Error crítico general en job_enviar_reporte_doctores: {e}")
-
-# --- SCHEDULER ---
-scheduler = BackgroundScheduler()
-scheduler.add_job(job_enviar_reporte_doctores, 'cron', hour=7, minute=0)
-scheduler.start()
-
 def get_doctor_data(doctor_id="default"):
     if supabase:
         try:
@@ -216,7 +145,6 @@ def extraer_datos_evento(evento, doc_default_id):
 
 def extraer_telefono_paciente(evento):
     texto = evento.get('summary', '') + " " + evento.get('description', '')
-    # Búsqueda robusta que tolera espacios o guiones entre los dígitos del teléfono mexicano
     posibles = re.findall(r'(?:\+?52)?\s*(\d{2,3})[\s-]?(\d{3,4})[\s-]?(\d{4})', texto)
     for p in posibles:
         num_completo = "".join(p)
@@ -325,40 +253,75 @@ def notificar_resumen_doctor(doc_id):
     mensaje += f"\n\n❌ *Cancelados ({len(cancelados)}):*\n" + ("\n".join(cancelados) if cancelados else "Ninguno")
     enviar_mensaje(tel_doctor, "text", contenido=mensaje)
 
-# --- RUTAS DE LA APLICACIÓN ---
-@app.route('/ejecutar-proceso-diario', methods=['POST'])
-def endpoint_proceso_diario():
-    log_debug("INICIO: Ejecutando proceso masivo de recordatorios para pacientes...")
+# --- RUTAS SEPARADAS PARA DOCTORES Y PACIENTES ---
+@app.route('/disparar-reportes', methods=['POST'])
+def endpoint_disparar_reportes_doctor():
+    log_debug("INICIO: Ejecutando reporte matutino exclusivamente para doctores...")
     if not supabase:
-        log_debug("ERROR: Supabase no está inicializado.")
         return jsonify({"status": "Error: Supabase no inicializado"}), 500
     
     try:
         doctores_res = supabase.table("Doctores").select("*").execute()
         doctores = doctores_res.data
         if not doctores:
-            log_debug("ADVERTENCIA: No hay doctores registrados para enviar recordatorios a pacientes.")
+            return jsonify({"status": "Sin doctores"}), 200
+
+        zona_mexico = pytz.timezone('America/Mexico_City')
+        ahora_mexico = datetime.datetime.now(zona_mexico)
+        inicio_mexico = ahora_mexico.replace(hour=0, minute=0, second=0, microsecond=0)
+        fin_mexico = ahora_mexico.replace(hour=23, minute=59, second=59, microsecond=0)
+        
+        inicio = inicio_mexico.astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
+        fin = fin_mexico.astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
+        
+        for doc in doctores:
+            doc_nombre = doc.get('name') or doc.get('nombre') or 'Sin nombre'
+            cal_id = doc.get("calendar_id") or doc.get("email")
+            if not cal_id: continue
+            
+            try:
+                eventos_result = calendario.events().list(
+                    calendarId=cal_id, timeMin=inicio, timeMax=fin, singleEvents=True
+                ).execute()
+                count = len(eventos_result.get('items', []))
+            except:
+                count = 0
+            
+            wa_raw = doc.get("wa_link") or doc.get("link") or ""
+            telefono_doc = "".join(filter(str.isdigit, str(wa_raw)))
+            
+            if telefono_doc and len(telefono_doc) >= 10:
+                enviar_plantilla_doctor(telefono_doc, doc_nombre, count)
+                log_debug(f"✅ Reporte enviado al doctor {doc_nombre} con {count} citas.")
+
+        return jsonify({"status": "Reporte de doctores enviado con éxito"}), 200
+    except Exception as e:
+        log_debug(f"Error en endpoint_disparar_reportes_doctor: {e}")
+        return jsonify({"status": f"Error: {e}"}), 500
+
+@app.route('/ejecutar-proceso-diario', methods=['POST'])
+def endpoint_proceso_diario_pacientes():
+    log_debug("INICIO: Ejecutando proceso masivo de recordatorios para pacientes...")
+    if not supabase:
+        return jsonify({"status": "Error: Supabase no inicializado"}), 500
+    
+    try:
+        doctores_res = supabase.table("Doctores").select("*").execute()
+        doctores = doctores_res.data
+        if not doctores:
             return jsonify({"status": "Sin doctores"}), 200
 
         zona_mexico = pytz.timezone('America/Mexico_City')
         ahora_mexico = datetime.datetime.now(zona_mexico)
         hoy = ahora_mexico.strftime('%Y-%m-%d')
-        log_debug(f"Fecha evaluada para pacientes (México): {hoy}")
 
         for doc in doctores:
-            doc_nombre = doc.get('name') or doc.get('nombre') or 'Sin nombre'
-            log_debug(f"--- Procesando recordatorios de pacientes para el doctor: {doc_nombre} ---")
             enviar_recordatorios_a_pacientes(doc, hoy)
 
-        return jsonify({"status": "Proceso de recordatorios a pacientes ejecutado con éxito"}), 200
+        return jsonify({"status": "Recordatorios a pacientes ejecutados con éxito"}), 200
     except Exception as e:
-        log_debug(f"Error crítico en endpoint_proceso_diario: {e}")
+        log_debug(f"Error en endpoint_proceso_diario_pacientes: {e}")
         return jsonify({"status": f"Error: {e}"}), 500
-
-@app.route('/disparar-reportes', methods=['POST'])
-def endpoint_disparar():
-    job_enviar_reporte_doctores()
-    return jsonify({"status": "Proceso manual de doctores iniciado con éxito"}), 200
 
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
