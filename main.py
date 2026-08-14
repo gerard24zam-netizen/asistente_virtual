@@ -69,6 +69,20 @@ def enviar_mensaje(telefono, tipo, contenido=None, template_params=None, templat
         log(f"Error enviando mensaje: {e}")
         return None
 
+def buscar_doctor_por_telefono(telefono_recibido):
+    tel_buscado = limpiar_telefono(telefono_recibido)
+    if not supabase:
+        return None
+    try:
+        response = supabase.table("Doctores").select("*").execute()
+        for doc in (response.data or []):
+            wa_link = doc.get("wa_link") or doc.get("link") or ""
+            if tel_buscado in limpiar_telefono(wa_link):
+                return doc
+    except Exception as e:
+        log(f"Error buscando doctor por teléfono: {e}")
+    return None
+
 @app.route('/')
 def home():
     return "API Activa", 200
@@ -87,6 +101,7 @@ def procesar_desde_supabase():
 
     zona_mexico = pytz.timezone('America/Mexico_City')
     ahora = datetime.datetime.now(zona_mexico)
+    fecha_hoy = str(ahora.date())
     inicio = ahora.replace(hour=0, minute=0, second=0).astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
     fin = ahora.replace(hour=23, minute=59, second=59).astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
 
@@ -108,16 +123,23 @@ def procesar_desde_supabase():
             log(f"Error leyendo calendario {cal_id}: {e}")
             continue
 
-        # 1. Enviar la plantilla jornada_doc al doctor con su reporte matutino y total de citas
-        total_citas_doc = len(eventos)
-        if tel_doc:
+        # 1. Enviar plantilla jornada_doc solo si NO se ha enviado hoy
+        jornada_registrada = doc.get("jornada_fecha")
+        if tel_doc and jornada_registrada != fecha_hoy:
+            total_citas_doc = len(eventos)
             params_jornada_doc = [
                 {"type": "text", "text": doc_nombre},
                 {"type": "text", "text": str(total_citas_doc)}
             ]
             resp_doc = enviar_mensaje(tel_doc, "template", template_params=params_jornada_doc, template_name="jornada_doc")
             if resp_doc and resp_doc.status_code < 400:
-                log(f"Plantilla jornada_doc enviada exitosamente al doctor {doc_nombre}")
+                log(f"Plantilla jornada_doc enviada al doctor {doc_nombre}")
+                try:
+                    supabase.table("Doctores").update({"jornada_fecha": fecha_hoy}).eq("calendar_id", cal_id).execute()
+                except Exception as ex:
+                    log(f"No se pudo guardar jornada_fecha en Supabase: {ex}")
+        else:
+            log(f"La plantilla jornada_doc ya había sido enviada hoy al doctor {doc_nombre}")
 
         # 2. Procesar y enviar recordatorios a los pacientes (Lógica intacta)
         for evento in eventos:
@@ -222,6 +244,20 @@ def procesar_webhook_asincrono(data):
             
             log(f"Mensaje recibido de {telefono_cliente}: {texto}")
 
+            # 1. Verificar si el mensaje viene de un DOCTOR registrado
+            doc_encontrado = buscar_doctor_por_telefono(telefono_cliente)
+            if doc_encontrado:
+                doc_nombre = doc_encontrado.get("name") or doc_encontrado.get("nombre") or "Doctor"
+                if any(k in texto for k in ["empecemos"]):
+                    resp_doc = '¡Perfecto! es un buen momento para empezar el día, "Stein tu Asistente Virtual" *activado*'
+                    enviar_mensaje(telefono_cliente, "text", contenido=resp_doc)
+                    return
+                elif any(k in texto for k in ["hoy no trabajo", "no trabajo", "descanso"]):
+                    resp_doc = f"Siempre es bueno tomarse el día para darse un respiro, bajar el cortisol y despejar la mente, que descanse {doc_nombre}. Hasta mañana *Stein tu Asistente Virtual*"
+                    enviar_mensaje(telefono_cliente, "text", contenido=resp_doc)
+                    return
+
+            # 2. Si no es doctor, procesar como PACIENTE (Lógica intacta)
             if any(k in texto for k in ["si", "sí", "confirmo", "confirmar"]):
                 doc, nombre_paciente = marcar_evento_calendario(telefono_cliente, 'confirmar')
                 if doc:
