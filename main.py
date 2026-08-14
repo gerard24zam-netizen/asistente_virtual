@@ -268,19 +268,19 @@ def procesar_webhook_asincrono(data):
                     
                     tel_doc = "".join(filter(str.isdigit, str(wa_link)))
                     if tel_doc:
-                        enviar_mensaje(tel_doc, "text", contenido=f"✅ El paciente {nombre_paciente} ha confirmado su cita de hoy.")
+                        enviar_mensaje(tel_doc, "text", contenido=f"✅ El paciente *{nombre_paciente}* ha confirmado su cita de hoy.")
 
             elif any(k in texto for k in ["no", "reagendar", "cancelar"]):
                 doc, nombre_paciente = marcar_evento_calendario(telefono_cliente, 'reagendar')
                 if doc:
                     doc_nombre = doc.get("name") or doc.get("nombre") or "Doctor"
                     wa_link = doc.get("wa_link") or doc.get("link") or ""
-                    respuesta_texto = f"*Se ha cancelado tu cita.* Para reagendar tu cita, por favor comunícate con {doc_nombre} aquí: {wa_link}."
+                    respuesta_texto = f"*Se ha cancelado tu cita.* Para reagendar para otro día, por favor comunícate con {doc_nombre} aquí: {wa_link}."
                     enviar_mensaje(telefono_cliente, "text", contenido=respuesta_texto)
                     
                     tel_doc = "".join(filter(str.isdigit, str(wa_link)))
                     if tel_doc:
-                        enviar_mensaje(tel_doc, "text", contenido=f"❌ El paciente {nombre_paciente} indicó que necesita reagendar su cita de hoy.")
+                        enviar_mensaje(tel_doc, "text", contenido=f"❌ El paciente *{nombre_paciente}* indicó que necesita reagendar su cita de hoy.")
     except Exception as e:
         log(f"Error en webhook asíncrono: {e}")
 
