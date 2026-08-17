@@ -102,17 +102,38 @@ def procesar_desde_supabase():
     zona_mexico = pytz.timezone('America/Mexico_City')
     ahora = datetime.datetime.now(zona_mexico)
     fecha_hoy = str(ahora.date())
+
+    # Mapeo para validar días de la semana
+    nombres_dias = {
+        "Monday": "Lunes", "Tuesday": "Martes", "Wednesday": "Miercoles",
+        "Thursday": "Jueves", "Friday": "Viernes", "Saturday": "Sabado", "Sunday": "Domingo"
+    }
+    dia_actual_espanol = nombres_dias[ahora.strftime("%A")]
+
     inicio = ahora.replace(hour=0, minute=0, second=0).astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
     fin = ahora.replace(hour=23, minute=59, second=59).astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
 
     total_enviados = 0
 
     for doc in doctores:
+        doc_nombre = doc.get("name") or doc.get("nombre") or "Dr. Gerardo"
+
+        # --- VALIDACIÓN 1: Días de trabajo configurados ---
+        dias_configurados = doc.get("dias_trabajo") or "Lunes,Martes,Miercoles,Jueves,Viernes"
+        if dia_actual_espanol not in dias_configurados:
+            log(f"Hoy es {dia_actual_espanol}, día no laboral para {doc_nombre}. Saltando ejecución.")
+            continue
+
+        # --- VALIDACIÓN 2: Pausa activa (Vacaciones o fin de semana largo) ---
+        pausa_hasta = doc.get("pausa_hasta")
+        if pausa_hasta and fecha_hoy <= pausa_hasta:
+            log(f"El doctor {doc_nombre} se encuentra en pausa hasta {pausa_hasta}. Saltando ejecución.")
+            continue
+
         cal_id = doc.get("calendar_id") or doc.get("email")
         if not cal_id:
             continue
 
-        doc_nombre = doc.get("name") or doc.get("nombre") or "Dr. Gerardo"
         doc_ocupacion = doc.get("ocupation") or "Atención Psicológica"
         wa_link = doc.get("wa_link") or doc.get("link") or ""
         tel_doc = "".join(filter(str.isdigit, str(wa_link)))
@@ -248,12 +269,57 @@ def procesar_webhook_asincrono(data):
             doc_encontrado = buscar_doctor_por_telefono(telefono_cliente)
             if doc_encontrado:
                 doc_nombre = doc_encontrado.get("name") or doc_encontrado.get("nombre") or "Doctor"
+                doc_cal_id = doc_encontrado.get("calendar_id")
+
                 if any(k in texto for k in ["empecemos"]):
                     resp_doc = '¡Perfecto! es un buen momento para empezar el día, "Stein tu Asistente Virtual" *activado*'
                     enviar_mensaje(telefono_cliente, "text", contenido=resp_doc)
                     return
                 elif any(k in texto for k in ["hoy no trabajo", "no trabajo", "descanso"]):
-                    resp_doc = f"Siempre es bueno tomarse el día para darse un respiro, bajar el cortisol y despejar la mente, que descanse *{doc_nombre}*. Hasta mañana *Stein tu Asistente Virtual*"
+                    zona_mexico = pytz.timezone('America/Mexico_City')
+                    ahora = datetime.datetime.now(zona_mexico)
+                    fecha_hoy = ahora.date()
+                    
+                    fecha_pausa_fin = fecha_hoy # Por defecto solo hoy
+                    
+                    # 1. Buscar si escribió una fecha explícita en formato DD-MM-AAAA o DD/MM/AAAA
+                    match_fecha = re.search(r'(\d{1,2})[-/](\d{1,2})[-/](\d{4})', texto)
+                    if match_fecha:
+                        dia, mes, anio = map(int, match_fecha.groups())
+                        try:
+                            fecha_pausa_fin = datetime.date(anio, mes, dia)
+                        except ValueError:
+                            pass
+                    else:
+                        # 2. Si no puso fecha exacta, buscar si mencionó un día de la semana (ej. "hasta el lunes")
+                        dias_semana_map = {
+                            "lunes": 0, "martes": 1, "miércoles": 2, "miercoles": 2, 
+                            "jueves": 3, "viernes": 4, "sábado": 5, "sabado": 5, "domingo": 6
+                        }
+                        for nombre_dia, dia_num in dias_semana_map.items():
+                            if nombre_dia in texto:
+                                dias_a_sumar = (dia_num - fecha_hoy.weekday() + 7) % 7
+                                if dias_a_sumar == 0:
+                                    dias_a_sumar = 7
+                                fecha_pausa_fin = fecha_hoy + datetime.timedelta(days=dias_a_sumar)
+                                break
+
+                    fecha_pausa_str = str(fecha_pausa_fin)
+                    
+                    # Actualizar en Supabase
+                    try:
+                        supabase.table("Doctores").update({
+                            "jornada_fecha": str(fecha_hoy),
+                            "pausa_hasta": fecha_pausa_str
+                        }).eq("calendar_id", doc_cal_id).execute()
+                    except Exception as e:
+                        log(f"Error actualizando pausa en Supabase: {e}")
+
+                    if fecha_pausa_fin > fecha_hoy:
+                        resp_doc = f"Entendido Dr. {doc_nombre}, he pausado las notificaciones desde hoy hasta el {fecha_pausa_str}. Disfrute sus vacaciones o descanso. *Stein tu Asistente Virtual*"
+                    else:
+                        resp_doc = f"Siempre es bueno tomarse el día para darse un respiro, bajar el cortisol y despejar la mente, que descanse *{doc_nombre}*. Hasta mañana *Stein tu Asistente Virtual*"
+                    
                     enviar_mensaje(telefono_cliente, "text", contenido=resp_doc)
                     return
 
