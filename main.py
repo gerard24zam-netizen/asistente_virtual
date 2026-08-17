@@ -103,7 +103,6 @@ def procesar_desde_supabase():
     ahora = datetime.datetime.now(zona_mexico)
     fecha_hoy = str(ahora.date())
 
-    # Mapeo para validar días de la semana
     nombres_dias = {
         "Monday": "Lunes", "Tuesday": "Martes", "Wednesday": "Miercoles",
         "Thursday": "Jueves", "Friday": "Viernes", "Saturday": "Sabado", "Sunday": "Domingo"
@@ -118,10 +117,15 @@ def procesar_desde_supabase():
     for doc in doctores:
         doc_nombre = doc.get("name") or doc.get("nombre") or "Dr. Gerardo"
 
-        # --- VALIDACIÓN 1: Días de trabajo configurados ---
+        # --- VALIDACIÓN 1: Días de trabajo configurados y Excepciones de fin de semana ---
         dias_configurados = doc.get("dias_trabajo") or "Lunes,Martes,Miercoles,Jueves,Viernes"
-        if dia_actual_espanol not in dias_configurados:
-            log(f"Hoy es {dia_actual_espanol}, día no laboral para {doc_nombre}. Saltando ejecución.")
+        trabajar_fechas_str = doc.get("trabajar_fecha") or ""
+        
+        es_dia_laboral_normal = dia_actual_espanol in dias_configurados
+        es_fecha_excepcion = fecha_hoy in [f.strip() for f in trabajar_fechas_str.split(",") if f.strip()]
+
+        if not es_dia_laboral_normal and not es_fecha_excepcion:
+            log(f"Hoy es {dia_actual_espanol} ({fecha_hoy}), día no laboral y sin excepciones para {doc_nombre}. Saltando ejecución.")
             continue
 
         # --- VALIDACIÓN 2: Pausa activa (Vacaciones o fin de semana largo) ---
@@ -137,6 +141,15 @@ def procesar_desde_supabase():
         doc_ocupacion = doc.get("ocupation") or "Atención Psicológica"
         wa_link = doc.get("wa_link") or doc.get("link") or ""
         tel_doc = "".join(filter(str.isdigit, str(wa_link)))
+
+        # Si ejecutó por excepción de fin de semana, limpiamos esa fecha ya procesada
+        if es_fecha_excepcion and not es_dia_laboral_normal:
+            fechas_pendientes = [f.strip() for f in trabajar_fechas_str.split(",") if f.strip() and f.strip() != fecha_hoy]
+            nueva_fechas_str = ",".join(fechas_pendientes) if fechas_pendientes else None
+            try:
+                supabase.table("Doctores").update({"trabajar_fecha": nueva_fechas_str}).eq("calendar_id", cal_id).execute()
+            except Exception as ex:
+                log(f"Error limpiando trabajar_fecha en Supabase: {ex}")
 
         try:
             eventos = calendario.events().list(calendarId=cal_id, timeMin=inicio, timeMax=fin, singleEvents=True).execute().get('items', [])
@@ -275,14 +288,68 @@ def procesar_webhook_asincrono(data):
                     resp_doc = '¡Perfecto! es un buen momento para empezar el día, "Stein tu Asistente Virtual" *activado*'
                     enviar_mensaje(telefono_cliente, "text", contenido=resp_doc)
                     return
+
+                elif any(k in texto for k in ["trabajo el fin de semana", "trabajar fin de semana", "trabajo sabado y domingo"]):
+                    zona_mexico = pytz.timezone('America/Mexico_City')
+                    ahora = datetime.datetime.now(zona_mexico)
+                    hoy_date = ahora.date()
+                    
+                    sabado_date = hoy_date + datetime.timedelta(days=((5 - hoy_date.weekday() + 7) % 7))
+                    domingo_date = hoy_date + datetime.timedelta(days=((6 - hoy_date.weekday() + 7) % 7))
+                    trabajar_str = f"{sabado_date},{domingo_date}"
+                    
+                    try:
+                        supabase.table("Doctores").update({
+                            "trabajar_fecha": trabajar_str
+                        }).eq("calendar_id", doc_cal_id).execute()
+                    except Exception as e:
+                        log(f"Error guardando trabajar_fecha en Supabase: {e}")
+                        
+                    resp_doc = f"Entendido Dr. {doc_nombre}, he habilitado la agenda para trabajar este fin de semana ({sabado_date} y {domingo_date}). *Stein tu Asistente Virtual*"
+                    enviar_mensaje(telefono_cliente, "text", contenido=resp_doc)
+                    return
+
+                elif any(k in texto for k in ["trabajo este sabado", "trabajo el sabado"]):
+                    zona_mexico = pytz.timezone('America/Mexico_City')
+                    ahora = datetime.datetime.now(zona_mexico)
+                    hoy_date = ahora.date()
+                    sabado_date = hoy_date + datetime.timedelta(days=((5 - hoy_date.weekday() + 7) % 7))
+                    
+                    try:
+                        supabase.table("Doctores").update({
+                            "trabajar_fecha": str(sabado_date)
+                        }).eq("calendar_id", doc_cal_id).execute()
+                    except Exception as e:
+                        log(f"Error guardando trabajar_fecha en Supabase: {e}")
+                        
+                    resp_doc = f"Entendido Dr. {doc_nombre}, he habilitado la agenda para trabajar este sábado {sabado_date}. *Stein tu Asistente Virtual*"
+                    enviar_mensaje(telefono_cliente, "text", contenido=resp_doc)
+                    return
+
+                elif any(k in texto for k in ["trabajo este domingo", "trabajo el domingo"]):
+                    zona_mexico = pytz.timezone('America/Mexico_City')
+                    ahora = datetime.datetime.now(zona_mexico)
+                    hoy_date = ahora.date()
+                    domingo_date = hoy_date + datetime.timedelta(days=((6 - hoy_date.weekday() + 7) % 7))
+                    
+                    try:
+                        supabase.table("Doctores").update({
+                            "trabajar_fecha": str(domingo_date)
+                        }).eq("calendar_id", doc_cal_id).execute()
+                    except Exception as e:
+                        log(f"Error guardando trabajar_fecha en Supabase: {e}")
+                        
+                    resp_doc = f"Entendido Dr. {doc_nombre}, he habilitado la agenda para trabajar este domingo {domingo_date}. *Stein tu Asistente Virtual*"
+                    enviar_mensaje(telefono_cliente, "text", contenido=resp_doc)
+                    return
+
                 elif any(k in texto for k in ["hoy no trabajo", "no trabajo", "descanso"]):
                     zona_mexico = pytz.timezone('America/Mexico_City')
                     ahora = datetime.datetime.now(zona_mexico)
                     fecha_hoy = ahora.date()
                     
-                    fecha_pausa_fin = fecha_hoy # Por defecto solo hoy
+                    fecha_pausa_fin = fecha_hoy
                     
-                    # 1. Buscar si escribió una fecha explícita en formato DD-MM-AAAA o DD/MM/AAAA
                     match_fecha = re.search(r'(\d{1,2})[-/](\d{1,2})[-/](\d{4})', texto)
                     if match_fecha:
                         dia, mes, anio = map(int, match_fecha.groups())
@@ -291,7 +358,6 @@ def procesar_webhook_asincrono(data):
                         except ValueError:
                             pass
                     else:
-                        # 2. Si no puso fecha exacta, buscar si mencionó un día de la semana (ej. "hasta el lunes")
                         dias_semana_map = {
                             "lunes": 0, "martes": 1, "miércoles": 2, "miercoles": 2, 
                             "jueves": 3, "viernes": 4, "sábado": 5, "sabado": 5, "domingo": 6
@@ -306,7 +372,6 @@ def procesar_webhook_asincrono(data):
 
                     fecha_pausa_str = str(fecha_pausa_fin)
                     
-                    # Actualizar en Supabase
                     try:
                         supabase.table("Doctores").update({
                             "jornada_fecha": str(fecha_hoy),
