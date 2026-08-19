@@ -5,7 +5,7 @@ import requests
 import datetime
 import pytz
 import threading
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template, redirect, url_for, session
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from supabase import create_client
@@ -18,6 +18,8 @@ META_TOKEN = "EAAXdEhil3gMBR0uiujuuAvK5nqaj8A9boQQ7Yd59u0Xa8GF86XVtJl2k7EWLecDPk
 VERIFY_TOKEN = "TOKEN_SECRETO_META"
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
+app = Flask(__name__)
+app.secret_key = 'tu_clave_secreta'  # Necesario para que funcione session
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
@@ -82,6 +84,26 @@ def buscar_doctor_por_telefono(telefono_recibido):
     except Exception as e:
         log(f"Error buscando doctor por teléfono: {e}")
     return None
+
+@app.route('/')
+def index():
+    return redirect(url_for('login'))
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    # ... código de login ...
+    return render_template('login.html', error=error)
+
+@app.route('/dashboard')
+def dashboard():
+    if 'user' not in session:
+        return redirect(url_for('login'))
+    return render_template('dashboard.html', user=session['user'])
+
+@app.route('/logout')
+def logout():
+    session.pop('user', None)
+    return redirect(url_for('login'))
 
 @app.route('/')
 def home():
@@ -428,4 +450,4 @@ def webhook():
     return "OK", 200
 
 if __name__ == '__main__':
-    app.run(port=5000)
+    app.run(debug=True, port=5000)
