@@ -92,7 +92,7 @@ def index():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     # ... código de login ...
-    return render_template('login.html', error=error)
+    return render_template('login.html', (error=error))
 
 @app.route('/dashboard')
 def dashboard():
