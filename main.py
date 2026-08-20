@@ -91,32 +91,35 @@ def index():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    error = None  # <--- ESTO ES LO QUE FALTA (definir la variable aquí arriba)
+    error = None  # <--- DEBE IR AQUÍ (Alineado al principio de la función, fuera del if)
     
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
         
-        if username == 'admin' and password == '123456':
-            session['user'] = username
+        # ¡CAMBIA ESTE USUARIO Y CONTRASEÑA POR UNOS SEGUROS EN PRODUCCIÓN!
+        if username == "admin" and password == "adminsecreto":
+            session['usuario_web'] = username
             return redirect(url_for('dashboard'))
         else:
-            error = 'Usuario o contraseña incorrectos. Inténtalo de nuevo.'
-            
+            error = "Usuario o contraseña incorrectos."
+
     return render_template('login.html', error=error)
 
 @app.route('/dashboard')
 def dashboard():
-    if 'user' not in session:
+    # Debe buscar 'usuario_web' que fue la llave que creamos en el login
+    if 'usuario_web' not in session:
         return redirect(url_for('login'))
-    return render_template('dashboard.html', user=session['user'])
+    return render_template('dashboard.html', user=session['usuario_web'])
 
 @app.route('/logout')
 def logout():
-    session.pop('user', None)
+    # Debe limpiar 'usuario_web'
+    session.pop('usuario_web', None)
     return redirect(url_for('login'))
 
-@app.route('/')
+@app.route('/status')
 def home():
     return "API Activa", 200
 
