@@ -91,6 +91,7 @@ def index():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    error = none
     # ... código de login ...
     return render_template('login.html', error=error)
 
