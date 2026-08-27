@@ -111,8 +111,34 @@ def dashboard():
     # Debe buscar 'usuario_web' que fue la llave que creamos en el login
     if 'usuario_web' not in session:
         return redirect(url_for('login'))
-    return render_template('dashboard.html', user=session['usuario_web'])
+    
+    try:
+        # Consultamos la tabla 'encuestas' en Supabase
+        response = supabase.table('encuestas').select('calificacion').execute()
+        registros = response.data
+        
+        # Calculamos el promedio de satisfacción
+        if registros:
+            total_calificaciones = sum(float(r['calificacion']) for r in registros if r.get('calificacion') is not None)
+            cantidad = len(registros)
+            promedio = round(total_calificaciones / cantidad, 1) if cantidad > 0 else 0
+        else:
+            promedio = 0.0
+            cantidad = 0
+            
+    except Exception as e:
+        print(f"Error al obtener métricas de Supabase: {e}")
+        promedio = 0.0
+        cantidad = 0
 
+    # Empaquetamos las métricas para enviarlas al HTML
+    metricas = {
+        "promedio_satisfaccion": f"{promedio} / 10",
+        "total_encuestas": cantidad
+    }
+    
+    return render_template('dashboard.html', user=session['usuario_web'], datos=metricas)
+    
 @app.route('/logout')
 def logout():
     # Debe limpiar 'usuario_web'
