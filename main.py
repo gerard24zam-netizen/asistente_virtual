@@ -9,6 +9,7 @@ from flask import Flask, request, jsonify, render_template, redirect, url_for, s
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from supabase import create_client
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 
