@@ -1,18 +1,19 @@
+<!-- templates/register.html -->
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Registro de Profesional - Asistente Virtual</title>
+    <title>Registro Profesional - Stein Asistente Pro</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
-<body class="bg-light d-flex align-items-center justify-content-center vh-100">
+<body class="bg-light d-flex align-items-center justify-content-center py-5">
 
-    <div class="container" style="max-width: 450px;">
+    <div class="container" style="max-width: 500px;">
         <div class="card border-0 shadow-sm rounded-4 p-4 bg-white">
             <div class="text-center mb-4">
-                <h3 class="fw-bold text-dark">Crear Cuenta</h3>
-                <p class="text-muted small">Registra tu correo y contraseña para administrar tu asistente de citas.</p>
+                <h3 class="fw-bold text-dark">Crear Cuenta Pro</h3>
+                <p class="text-muted small">Ingresa tus datos profesionales para administrar tu asistente.</p>
             </div>
 
             {% if error %}
@@ -25,23 +26,43 @@
             {% endif %}
 
             <form method="POST" id="registerForm">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="nombre" class="form-label small fw-bold">Nombre(s)</label>
+                        <input type="text" class="form-control rounded-3" id="nombre" name="nombre" required placeholder="Ej. Gerardo">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="apellido" class="form-label small fw-bold">Apellidos</label>
+                        <input type="text" class="form-control rounded-3" id="apellido" name="apellido" required placeholder="Ej. Zamora">
+                    </div>
+                </div>
+
                 <div class="mb-3">
-                    <label for="email" class="form-label small fw-bold">Correo Electrónico de tu Google Calendar</label>
-                    <input type="email" class="form-control rounded-3" id="email" name="email" required placeholder="doctor@tuclinic.com">
+                    <label for="ocupacion" class="form-label small fw-bold">Ocupación / Especialidad</label>
+                    <input type="text" class="form-control rounded-3" id="ocupacion" name="ocupacion" required placeholder="Ej. Psicólogo Clínico">
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="telefono" class="form-label small fw-bold">Número de Contacto</label>
+                        <input type="tel" class="form-control rounded-3" id="telefono" name="telefono" required placeholder="10 dígitos">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="email" class="form-label small fw-bold">Correo (Calendar ID)</label>
+                        <input type="email" class="form-control rounded-3" id="email" name="email" required placeholder="correo@clinica.com">
+                    </div>
                 </div>
 
                 <div class="mb-3">
                     <label for="password" class="form-label small fw-bold">Contraseña</label>
                     <input type="password" class="form-control rounded-3" id="password" name="password" required placeholder="••••••••">
                     
-                    <!-- Medidor de seguridad visual -->
                     <div class="progress mt-2" style="height: 6px;">
                         <div id="strengthBar" class="progress-bar" role="progressbar" style="width: 0%;"></div>
                     </div>
                     <small id="strengthText" class="text-muted d-block mt-1" style="font-size: 0.75rem;">Seguridad: Nula</small>
                 </div>
 
-                <!-- Lista de validaciones en tiempo real -->
                 <div class="bg-light p-3 rounded-3 mb-3 small text-muted">
                     <p class="fw-bold mb-1 text-dark" style="font-size: 0.8rem;">La contraseña debe cumplir con:</p>
                     <ul class="list-unstyled mb-0" style="font-size: 0.78rem;">
@@ -56,12 +77,11 @@
             </form>
 
             <div class="text-center mt-3">
-                <small class="text-muted">¿Ya tienes una cuenta? <a href="/login" class="text-decoration-none fw-bold">Inicia sesión</a></small>
+                <small class="text-muted">¿Ya tienes cuenta? <a href="/login" class="text-decoration-none fw-bold">Inicia sesión</a></small>
             </div>
         </div>
     </div>
 
-    <!-- Script de validación dinámica y medidor de seguridad -->
     <script>
         const passwordInput = document.getElementById('password');
         const strengthBar = document.getElementById('strengthBar');
@@ -76,27 +96,22 @@
         passwordInput.addEventListener('input', function() {
             const val = passwordInput.value;
             
-            // Evaluaciones individuales
             const hasLength = val.length >= 8;
             const hasUpper = /[A-Z]/.test(val);
             const hasNumber = /[0-9]/.test(val);
-            // Símbolos permitidos: @ , ; . : ! # $ % & + *
             const hasSpecial = /[@,;.!#$%&+*]/.test(val);
 
-            // Actualizar indicadores visuales de requisitos
             updateRequirement(reqLength, hasLength, "Mínimo 8 caracteres");
             updateRequirement(reqUpper, hasUpper, "Al menos una letra mayúscula");
             updateRequirement(reqNumber, hasNumber, "Al menos un número");
             updateRequirement(reqSpecial, hasSpecial, "Símbolo especial (@, ;, ., :, !, #, $, %, &, +, *)");
 
-            // Calcular puntaje de seguridad (0 a 4)
             let score = 0;
             if (hasLength) score++;
             if (hasUpper) score++;
             if (hasNumber) score++;
             if (hasSpecial) score++;
 
-            // Actualizar barra y texto de nivel de seguridad
             if (score === 0 || val.length === 0) {
                 strengthBar.style.width = "0%";
                 strengthBar.className = "progress-bar";
@@ -119,7 +134,6 @@
                 strengthText.className = "text-success d-block mt-1 fw-bold";
             }
 
-            // Habilitar botón solo si cumple absolutamente todo
             if (hasLength && hasUpper && hasNumber && hasSpecial) {
                 submitBtn.removeAttribute('disabled');
             } else {
@@ -137,6 +151,5 @@
             }
         }
     </script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
