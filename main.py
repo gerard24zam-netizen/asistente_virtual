@@ -5,11 +5,12 @@ import requests
 import datetime
 import pytz
 import threading
+import uuid
 from flask import Flask, request, jsonify, render_template, redirect, url_for, session
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from supabase import create_client
-from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.security import generate_password_hash
 
 app = Flask(__name__)
 
@@ -91,22 +92,39 @@ def register():
     error = None
     success = None
     if request.method == 'POST':
+        nombre = request.form.get('nombre')
+        ocupacion = request.form.get('ocupacion')
+        telefono = request.form.get('telefono')
         email = request.form.get('email')
         password = request.form.get('password')
         
         try:
-            # Validamos que el correo no exista previamente en la tabla Doctores
+            # Validar si el correo ya está registrado
             existing = supabase.table('Doctores').select('*').eq('calendar_id', email).execute()
             if existing.data and len(existing.data) > 0:
-                error = "Este correo ya se encuentra registrado."
+                error = "Este correo ya se encuentra registrado en el sistema."
             else:
-                # Encriptamos la contraseña de forma segura automáticamente
+                # Limpiar el teléfono para dejar solo dígitos
+                telefono_limpio = re.sub(r'\D', '', telefono)
+                
+                # Si el usuario ingresó 10 dígitos (México), anteponemos el código de país '52' automáticamente.
+                if len(telefono_limpio) == 10:
+                    telefono_limpio = '52' + telefono_limpio
+                
+                # Generar el enlace de WhatsApp automáticamente
+                wa_link = f"https://wa.me/{telefono_limpio}"
+                
                 hashed_password = generate_password_hash(password)
                 
-                # Insertamos el nuevo doctor en Supabase
+                # Inserción con los campos exactos de tu tabla en Supabase
                 supabase.table('Doctores').insert({
+                    'id': str(uuid.uuid4()),
                     'calendar_id': email,
-                    'password_hash': hashed_password
+                    'password_hash': hashed_password,
+                    'ocupacion': ocupacion,
+                    'wa_link': wa_link
+                    # Si tu tabla también tiene una columna 'name' o 'nombre', agrégala aquí:
+                    # 'name': nombre 
                 }).execute()
                 
                 success = "¡Cuenta creada exitosamente!"
