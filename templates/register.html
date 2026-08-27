@@ -13,7 +13,7 @@
         <div class="card border-0 shadow-sm rounded-4 p-4 bg-white">
             <div class="text-center mb-4">
                 <h3 class="fw-bold text-dark">Crear Cuenta Pro</h3>
-                <p class="text-muted small">Ingresa tus datos profesionales para administrar tu asistente.</p>
+                <p class="text-muted small">Ingresa tus datos para configurar tu asistente de WhatsApp y Citas.</p>
             </div>
 
             {% if error %}
@@ -26,31 +26,25 @@
             {% endif %}
 
             <form method="POST" id="registerForm">
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <label for="nombre" class="form-label small fw-bold">Nombre(s)</label>
-                        <input type="text" class="form-control rounded-3" id="nombre" name="nombre" required placeholder="Ej. Gerardo">
-                    </div>
-                    <div class="col-md-6 mb-3">
-                        <label for="apellido" class="form-label small fw-bold">Apellidos</label>
-                        <input type="text" class="form-control rounded-3" id="apellido" name="apellido" required placeholder="Ej. Zamora">
-                    </div>
+                <div class="mb-3">
+                    <label for="nombre" class="form-label small fw-bold">Nombre Completo</label>
+                    <input type="text" class="form-control rounded-3" id="nombre" name="nombre" required placeholder="Ej. Dr. Gerardo Zamora">
                 </div>
 
                 <div class="mb-3">
                     <label for="ocupacion" class="form-label small fw-bold">Ocupación / Especialidad</label>
-                    <input type="text" class="form-control rounded-3" id="ocupacion" name="ocupacion" required placeholder="Ej. Psicólogo Clínico">
+                    <input type="text" class="form-control rounded-3" id="ocupacion" name="ocupacion" required placeholder="Ej. Atención Psicológica">
                 </div>
 
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <label for="telefono" class="form-label small fw-bold">Número de Contacto</label>
-                        <input type="tel" class="form-control rounded-3" id="telefono" name="telefono" required placeholder="10 dígitos">
-                    </div>
-                    <div class="col-md-6 mb-3">
-                        <label for="email" class="form-label small fw-bold">Correo (Calendar ID)</label>
-                        <input type="email" class="form-control rounded-3" id="email" name="email" required placeholder="correo@clinica.com">
-                    </div>
+                <div class="mb-3">
+                    <label for="telefono" class="form-label small fw-bold">Número de Celular (WhatsApp)</label>
+                    <input type="tel" class="form-control rounded-3" id="telefono" name="telefono" required placeholder="Ej. 4431234567 (10 dígitos con LADA)">
+                    <small class="text-muted" style="font-size: 0.75rem;">El sistema generará tu enlace de WhatsApp automáticamente.</small>
+                </div>
+
+                <div class="mb-3">
+                    <label for="email" class="form-label small fw-bold">Correo Electrónico (Calendar ID)</label>
+                    <input type="email" class="form-control rounded-3" id="email" name="email" required placeholder="correo@clinica.com">
                 </div>
 
                 <div class="mb-3">
