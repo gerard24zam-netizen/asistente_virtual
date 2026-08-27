@@ -116,6 +116,24 @@ def register():
             
     return render_template('register.html', error=error, success=success)
 
+@app.route('/forgot-password', methods=['GET', 'POST'])
+def forgot_password():
+    message = None
+    if request.method == 'POST':
+        email = request.form.get('email')
+        try:
+            # Verificamos si el correo existe
+            user = supabase.table('Doctores').select('*').eq('calendar_id', email).execute()
+            if user.data and len(user.data) > 0:
+                message = "Se han enviado las instrucciones de recuperación a tu correo electrónico."
+            else:
+                message = "El correo ingresado no está asociado a ninguna cuenta activa."
+        except Exception as e:
+            print(f"Error en recuperación: {e}")
+            message = "Ocurrió un error al procesar tu solicitud."
+            
+    return render_template('forgot_password.html', message=message)
+
 @app.route('/')
 def index():
     return redirect(url_for('login'))
