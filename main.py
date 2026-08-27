@@ -92,27 +92,41 @@ def index():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    error = None  # <--- DEBE IR AQUÍ (Alineado al principio de la función, fuera del if)
-    
     if request.method == 'POST':
-        username = request.form.get('username')
+        email = request.form.get('email')
         password = request.form.get('password')
         
-        # ¡CAMBIA ESTE USUARIO Y CONTRASEÑA POR UNOS SEGUROS EN PRODUCCIÓN!
-        if username == "admin" and password == "adminsecreto":
-            session['usuario_web'] = username
-            return redirect(url_for('dashboard'))
-        else:
-            error = "Usuario o contraseña incorrectos."
-
-    return render_template('login.html', error=error)
-
-from datetime import datetime
+        try:
+            # Buscamos al doctor en Supabase por su correo (calendar_id)
+            response = supabase.table('Doctores').select('*').eq('calendar_id', email).execute()
+            
+            if response.data and len(response.data) > 0:
+                doctor = response.data[0]
+                stored_password_hash = doctor.get('password_hash')
+                
+                # Verificamos si la contraseña coincide con el hash guardado
+                if stored_password_hash and check_password_hash(stored_password_hash, password):
+                    # Guardamos la sesión vinculada a su correo/calendar_id
+                    session['usuario_web'] = doctor.get('calendar_id')
+                    return redirect(url_for('dashboard'))
+                else:
+                    return render_template('login.html', error="Contraseña incorrecta.")
+            else:
+                return render_template('login.html', error="El usuario no está registrado.")
+                
+        except Exception as e:
+            print(f"Error en el login: {e}")
+            return render_template('login.html', error="Error interno al iniciar sesión.")
+            
+    return render_template('login.html', error=None)
 
 @app.route('/dashboard')
 def dashboard():
     if 'usuario_web' not in session:
         return redirect(url_for('login'))
+    
+    # Obtenemos el correo del doctor logueado actualmente
+    doctor_actual = session['usuario_web']
     
     total_enviadas = 0
     confirmadas = 0
@@ -121,22 +135,19 @@ def dashboard():
     cantidad_encuestas = 0
 
     try:
-        # Obtenemos el mes y año actual para hacer el corte de cobro (Ej: '2026-08')
         mes_actual = datetime.now().strftime('%Y-%m')
 
-        # 1. Consultamos el historial de uso real en la tabla 'citas_procesadas'
-        response_uso = supabase.table('citas_procesadas').select('*').execute()
+        # 1. Consultamos citas procesadas SÓLO de este doctor
+        response_uso = supabase.table('citas_procesadas').select('*').eq('calendar_id', doctor_actual).execute()
         
         if response_uso.data:
-            # Filtramos los registros que coincidan con el mes actual
             registros_mes = [r for r in response_uso.data if r.get('fecha', '').startswith(mes_actual)]
-            
             total_enviadas = len(registros_mes)
             confirmadas = sum(1 for r in registros_mes if r.get('estado') == 'confirmado')
             canceladas = sum(1 for r in registros_mes if r.get('estado') in ['cancelado', 'reagendar'])
 
-        # 2. Consultamos las encuestas del mes para el promedio de satisfacción
-        response_encuestas = supabase.table('encuestas').select('calificacion, fecha').execute()
+        # 2. Consultamos encuestas SÓLO de este doctor
+        response_encuestas = supabase.table('encuestas').select('calificacion, fecha').eq('calendar_id', doctor_actual).execute()
         if response_encuestas.data:
             encuestas_mes = [r for r in response_encuestas.data if r.get('fecha', '').startswith(mes_actual)]
             
@@ -146,9 +157,8 @@ def dashboard():
                 promedio = round(total_cal / cantidad_encuestas, 1) if cantidad_encuestas > 0 else 0
 
     except Exception as e:
-        print(f"Error al calcular métricas del dashboard: {e}")
+        print(f"Error al calcular métricas seguras del dashboard: {e}")
 
-    # Empaquetamos las métricas para enviarlas al HTML
     metricas = {
         "citas_enviadas": total_enviadas,
         "citas_confirmadas": confirmadas,
@@ -157,7 +167,7 @@ def dashboard():
         "total_encuestas": cantidad_encuestas
     }
     
-    return render_template('dashboard.html', user=session['usuario_web'], datos=metricas)
+    return render_template('dashboard.html', user=doctor_actual, datos=metricas)
     
 @app.route('/logout')
 def logout():
