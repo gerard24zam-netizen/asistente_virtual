@@ -86,6 +86,36 @@ def buscar_doctor_por_telefono(telefono_recibido):
         log(f"Error buscando doctor por teléfono: {e}")
     return None
 
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    error = None
+    success = None
+    if request.method == 'POST':
+        email = request.form.get('email')
+        password = request.form.get('password')
+        
+        try:
+            # Validamos que el correo no exista previamente en la tabla Doctores
+            existing = supabase.table('Doctores').select('*').eq('calendar_id', email).execute()
+            if existing.data and len(existing.data) > 0:
+                error = "Este correo ya se encuentra registrado."
+            else:
+                # Encriptamos la contraseña de forma segura automáticamente
+                hashed_password = generate_password_hash(password)
+                
+                # Insertamos el nuevo doctor en Supabase
+                supabase.table('Doctores').insert({
+                    'calendar_id': email,
+                    'password_hash': hashed_password
+                }).execute()
+                
+                success = "¡Cuenta creada exitosamente!"
+        except Exception as e:
+            print(f"Error al registrar usuario: {e}")
+            error = "Ocurrió un error interno al procesar el registro."
+            
+    return render_template('register.html', error=error, success=success)
+
 @app.route('/')
 def index():
     return redirect(url_for('login'))
