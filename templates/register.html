@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registro de Profesional - Asistente Virtual</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light d-flex align-items-center justify-content-center vh-100">
+
+    <div class="container" style="max-width: 450px;">
+        <div class="card border-0 shadow-sm rounded-4 p-4 bg-white">
+            <div class="text-center mb-4">
+                <h3 class="fw-bold text-dark">Crear Cuenta</h3>
+                <p class="text-muted small">Registra tu correo y contraseña para administrar tu asistente de citas.</p>
+            </div>
+
+            {% if error %}
+                <div class="alert alert-danger py-2 small" role="alert">{{ error }}</div>
+            {% endif %}
+            {% if success %}
+                <div class="alert alert-success py-2 small" role="alert">
+                    {{ success }} <a href="/login" class="fw-bold">Inicia sesión aquí</a>
+                </div>
+            {% endif %}
+
+            <form method="POST" id="registerForm">
+                <div class="mb-3">
+                    <label for="email" class="form-label small fw-bold">Correo Electrónico (Calendar ID)</label>
+                    <input type="email" class="form-control rounded-3" id="email" name="email" required placeholder="doctor@tuclinic.com">
+                </div>
+
+                <div class="mb-3">
+                    <label for="password" class="form-label small fw-bold">Contraseña</label>
+                    <input type="password" class="form-control rounded-3" id="password" name="password" required placeholder="••••••••">
+                    
+                    <!-- Medidor de seguridad visual -->
+                    <div class="progress mt-2" style="height: 6px;">
+                        <div id="strengthBar" class="progress-bar" role="progressbar" style="width: 0%;"></div>
+                    </div>
+                    <small id="strengthText" class="text-muted d-block mt-1" style="font-size: 0.75rem;">Seguridad: Nula</small>
+                </div>
+
+                <!-- Lista de validaciones en tiempo real -->
+                <div class="bg-light p-3 rounded-3 mb-3 small text-muted">
+                    <p class="fw-bold mb-1 text-dark" style="font-size: 0.8rem;">La contraseña debe cumplir con:</p>
+                    <ul class="list-unstyled mb-0" style="font-size: 0.78rem;">
+                        <li id="req-length" class="text-danger">❌ Mínimo 8 caracteres</li>
+                        <li id="req-upper" class="text-danger">❌ Al menos una letra mayúscula</li>
+                        <li id="req-number" class="text-danger">❌ Al menos un número</li>
+                        <li id="req-special" class="text-danger">❌ Símbolo especial (@, ;, ., :, !, #, $, %, &, +, *)</li>
+                    </ul>
+                </div>
+
+                <button type="submit" id="submitBtn" class="btn btn-primary w-100 rounded-3 py-2 fw-bold shadow-sm" disabled>Registrarse</button>
+            </form>
+
+            <div class="text-center mt-3">
+                <small class="text-muted">¿Ya tienes una cuenta? <a href="/login" class="text-decoration-none fw-bold">Inicia sesión</a></small>
+            </div>
+        </div>
+    </div>
+
+    <!-- Script de validación dinámica y medidor de seguridad -->
+    <script>
+        const passwordInput = document.getElementById('password');
+        const strengthBar = document.getElementById('strengthBar');
+        const strengthText = document.getElementById('strengthText');
+        const submitBtn = document.getElementById('submitBtn');
+
+        const reqLength = document.getElementById('req-length');
+        const reqUpper = document.getElementById('req-upper');
+        const reqNumber = document.getElementById('req-number');
+        const reqSpecial = document.getElementById('req-special');
+
+        passwordInput.addEventListener('input', function() {
+            const val = passwordInput.value;
+            
+            // Evaluaciones individuales
+            const hasLength = val.length >= 8;
+            const hasUpper = /[A-Z]/.test(val);
+            const hasNumber = /[0-9]/.test(val);
+            // Símbolos permitidos: @ , ; . : ! # $ % & + *
+            const hasSpecial = /[@,;.!#$%&+*]/.test(val);
+
+            // Actualizar indicadores visuales de requisitos
+            updateRequirement(reqLength, hasLength, "Mínimo 8 caracteres");
+            updateRequirement(reqUpper, hasUpper, "Al menos una letra mayúscula");
+            updateRequirement(reqNumber, hasNumber, "Al menos un número");
+            updateRequirement(reqSpecial, hasSpecial, "Símbolo especial (@, ;, ., :, !, #, $, %, &, +, *)");
+
+            // Calcular puntaje de seguridad (0 a 4)
+            let score = 0;
+            if (hasLength) score++;
+            if (hasUpper) score++;
+            if (hasNumber) score++;
+            if (hasSpecial) score++;
+
+            // Actualizar barra y texto de nivel de seguridad
+            if (score === 0 || val.length === 0) {
+                strengthBar.style.width = "0%";
+                strengthBar.className = "progress-bar";
+                strengthText.textContent = "Seguridad: Nula";
+                strengthText.className = "text-muted d-block mt-1";
+            } else if (score <= 2) {
+                strengthBar.style.width = "33%";
+                strengthBar.className = "progress-bar bg-danger";
+                strengthText.textContent = "Seguridad: Poco segura";
+                strengthText.className = "text-danger d-block mt-1 fw-bold";
+            } else if (score === 3) {
+                strengthBar.style.width = "66%";
+                strengthBar.className = "progress-bar bg-warning";
+                strengthText.textContent = "Seguridad: Media";
+                strengthText.className = "text-warning d-block mt-1 fw-bold";
+            } else if (score === 4) {
+                strengthBar.style.width = "100%";
+                strengthBar.className = "progress-bar bg-success";
+                strengthText.textContent = "Seguridad: Alta";
+                strengthText.className = "text-success d-block mt-1 fw-bold";
+            }
+
+            // Habilitar botón solo si cumple absolutamente todo
+            if (hasLength && hasUpper && hasNumber && hasSpecial) {
+                submitBtn.removeAttribute('disabled');
+            } else {
+                submitBtn.setAttribute('disabled', 'true');
+            }
+        });
+
+        function updateRequirement(element, isValid, text) {
+            if (isValid) {
+                element.textContent = "✔️ " + text;
+                element.className = "text-success";
+            } else {
+                element.textContent = "❌ " + text;
+                element.className = "text-danger";
+            }
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
