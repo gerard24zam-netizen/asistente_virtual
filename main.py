@@ -106,44 +106,52 @@ def login():
 
     return render_template('login.html', error=error)
 
+from datetime import datetime
+
 @app.route('/dashboard')
 def dashboard():
     if 'usuario_web' not in session:
         return redirect(url_for('login'))
     
-    total_citas_enviadas = 0
-    citas_confirmadas = 0
-    citas_canceladas = 0
+    total_enviadas = 0
+    confirmadas = 0
+    canceladas = 0
     promedio = 0.0
     cantidad_encuestas = 0
 
     try:
-        # 1. Consultamos las calificaciones de la tabla 'encuestas' en Supabase
-        response_encuestas = supabase.table('encuestas').select('calificacion').execute()
-        registros_encuestas = response_encuestas.data
-        
-        if registros_encuestas:
-            total_calificaciones = sum(float(r['calificacion']) for r in registros_encuestas if r.get('calificacion') is not None)
-            cantidad_encuestas = len(registros_encuestas)
-            promedio = round(total_calificaciones / cantidad_encuestas, 1) if cantidad_encuestas > 0 else 0
+        # Obtenemos el mes y año actual para hacer el corte de cobro (Ej: '2026-08')
+        mes_actual = datetime.now().strftime('%Y-%m')
 
-        # 2. Consultamos registros de citas o recordatorios activos para la monetización
-        # (Ajusta el nombre de la tabla según la que uses para rastrear los mensajes/citas enviados, ej: 'recordatorios_activos')
-        response_citas = supabase.table('recordatorios_activos').select('*').execute()
-        if response_citas.data:
-            total_citas_enviadas = len(response_citas.data)
-            # Si tienes una columna de estado, puedes filtrarlas o contarlas aquí
-            citas_confirmadas = sum(1 for c in response_citas.data if c.get('estado') == 'confirmado')
-            citas_canceladas = sum(1 for c in response_citas.data if c.get('estado') in ['cancelado', 'reagendar'])
+        # 1. Consultamos el historial de uso real en la tabla 'citas_procesadas'
+        response_uso = supabase.table('citas_procesadas').select('*').execute()
+        
+        if response_uso.data:
+            # Filtramos los registros que coincidan con el mes actual
+            registros_mes = [r for r in response_uso.data if r.get('fecha', '').startswith(mes_actual)]
+            
+            total_enviadas = len(registros_mes)
+            confirmadas = sum(1 for r in registros_mes if r.get('estado') == 'confirmado')
+            canceladas = sum(1 for r in registros_mes if r.get('estado') in ['cancelado', 'reagendar'])
+
+        # 2. Consultamos las encuestas del mes para el promedio de satisfacción
+        response_encuestas = supabase.table('encuestas').select('calificacion, fecha').execute()
+        if response_encuestas.data:
+            encuestas_mes = [r for r in response_encuestas.data if r.get('fecha', '').startswith(mes_actual)]
+            
+            if encuestas_mes:
+                total_cal = sum(float(r['calificacion']) for r in encuestas_mes if r.get('calificacion') is not None)
+                cantidad_encuestas = len(encuestas_mes)
+                promedio = round(total_cal / cantidad_encuestas, 1) if cantidad_encuestas > 0 else 0
 
     except Exception as e:
-        print(f"Error al obtener métricas del dashboard desde Supabase: {e}")
+        print(f"Error al calcular métricas del dashboard: {e}")
 
-    # Empaquetamos todas las métricas para enviarlas al HTML
+    # Empaquetamos las métricas para enviarlas al HTML
     metricas = {
-        "citas_enviadas": total_citas_enviadas,
-        "citas_confirmadas": citas_confirmadas,
-        "citas_canceladas": citas_canceladas,
+        "citas_enviadas": total_enviadas,
+        "citas_confirmadas": confirmadas,
+        "citas_canceladas": canceladas,
         "promedio_satisfaccion": f"{promedio} / 10",
         "total_encuestas": cantidad_encuestas
     }
