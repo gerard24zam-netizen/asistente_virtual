@@ -108,33 +108,44 @@ def login():
 
 @app.route('/dashboard')
 def dashboard():
-    # Debe buscar 'usuario_web' que fue la llave que creamos en el login
     if 'usuario_web' not in session:
         return redirect(url_for('login'))
     
-    try:
-        # Consultamos la tabla 'encuestas' en Supabase
-        response = supabase.table('encuestas').select('calificacion').execute()
-        registros = response.data
-        
-        # Calculamos el promedio de satisfacción
-        if registros:
-            total_calificaciones = sum(float(r['calificacion']) for r in registros if r.get('calificacion') is not None)
-            cantidad = len(registros)
-            promedio = round(total_calificaciones / cantidad, 1) if cantidad > 0 else 0
-        else:
-            promedio = 0.0
-            cantidad = 0
-            
-    except Exception as e:
-        print(f"Error al obtener métricas de Supabase: {e}")
-        promedio = 0.0
-        cantidad = 0
+    total_citas_enviadas = 0
+    citas_confirmadas = 0
+    citas_canceladas = 0
+    promedio = 0.0
+    cantidad_encuestas = 0
 
-    # Empaquetamos las métricas para enviarlas al HTML
+    try:
+        # 1. Consultamos las calificaciones de la tabla 'encuestas' en Supabase
+        response_encuestas = supabase.table('encuestas').select('calificacion').execute()
+        registros_encuestas = response_encuestas.data
+        
+        if registros_encuestas:
+            total_calificaciones = sum(float(r['calificacion']) for r in registros_encuestas if r.get('calificacion') is not None)
+            cantidad_encuestas = len(registros_encuestas)
+            promedio = round(total_calificaciones / cantidad_encuestas, 1) if cantidad_encuestas > 0 else 0
+
+        # 2. Consultamos registros de citas o recordatorios activos para la monetización
+        # (Ajusta el nombre de la tabla según la que uses para rastrear los mensajes/citas enviados, ej: 'recordatorios_activos')
+        response_citas = supabase.table('recordatorios_activos').select('*').execute()
+        if response_citas.data:
+            total_citas_enviadas = len(response_citas.data)
+            # Si tienes una columna de estado, puedes filtrarlas o contarlas aquí
+            citas_confirmadas = sum(1 for c in response_citas.data if c.get('estado') == 'confirmado')
+            citas_canceladas = sum(1 for c in response_citas.data if c.get('estado') in ['cancelado', 'reagendar'])
+
+    except Exception as e:
+        print(f"Error al obtener métricas del dashboard desde Supabase: {e}")
+
+    # Empaquetamos todas las métricas para enviarlas al HTML
     metricas = {
+        "citas_enviadas": total_citas_enviadas,
+        "citas_confirmadas": citas_confirmadas,
+        "citas_canceladas": citas_canceladas,
         "promedio_satisfaccion": f"{promedio} / 10",
-        "total_encuestas": cantidad
+        "total_encuestas": cantidad_encuestas
     }
     
     return render_template('dashboard.html', user=session['usuario_web'], datos=metricas)
