@@ -211,6 +211,35 @@ def procesar_desde_supabase():
         else:
             log(f"La plantilla jornada_doc ya había sido enviada hoy al doctor {doc_nombre}")
 
+        # --- CALCULAR REPORTE DE ENCUESTAS DEL DÍA ANTERIOR Y ENVIAR AL DOCTOR ---
+        ayer_str = str((ahora - datetime.timedelta(days=1)).date())
+        promedio_str = "Sin calificaciones aún"
+        total_respuestas = 0
+        
+        if supabase:
+            try:
+                res_encuestas = supabase.table("Encuestas").select("*").eq("calendar_id", cal_id).execute()
+                registros = res_encuestas.data or []
+                calificaciones_ayer = [
+                    r["calificacion"] for r in registros 
+                    if r.get("fecha", "").startswith(ayer_str)
+                ]
+                if calificaciones_ayer:
+                    total_respuestas = len(calificaciones_ayer)
+                    promedio = sum(calificaciones_ayer) / total_respuestas
+                    promedio_str = f"{promedio:.1f} / 10"
+            except Exception as ex:
+                log(f"Error calculando promedio de encuestas: {ex}")
+
+        if tel_doc and total_respuestas > 0:
+            mensaje_balance = (
+                f"📊 *Reporte de Satisfacción de Ayer*:\n"
+                f"Recibiste {total_respuestas} respuesta(s).\n"
+                f"Calificación promedio: *{promedio_str}*.\n"
+                f"¡Excelente trabajo Dr. {doc_nombre}! *Stein tu Asistente Virtual*"
+            )
+            enviar_mensaje(tel_doc, "text", contenido=mensaje_balance)
+
         # 2. Procesar y enviar recordatorios a los pacientes (Lógica intacta)
         for evento in eventos:
             titulo = evento.get('summary', '')
@@ -249,6 +278,68 @@ def procesar_desde_supabase():
                     log(f"Recordatorio enviado a paciente {telefono_paciente}")
 
     return jsonify({"status": "ok", "enviados": total_enviados}), 200
+
+@app.route('/ejecutar-encuesta-nocturna', methods=['POST'])
+def ejecutar_encuesta_nocturna():
+    if not supabase or not calendario:
+        return jsonify({"error": "Falta configuración de Supabase o Google Calendar"}), 500
+
+    try:
+        # 1. Obtener de Supabase los doctores que tienen activada la encuesta
+        response = supabase.table("Doctores").select("*").eq("enviar_encuesta", True).execute()
+        doctores_activos = response.data if response.data else []
+
+        if not doctores_activos:
+            return jsonify({"status": "success", "message": "No hay doctores con encuesta activa hoy."}), 200
+
+        zona_mexico = pytz.timezone('America/Mexico_City')
+        ahora = datetime.datetime.now(zona_mexico)
+        inicio = ahora.replace(hour=0, minute=0, second=0).astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
+        fin = ahora.replace(hour=23, minute=59, second=59).astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
+
+        for doc in doctores_activos:
+            cal_id = doc.get("calendar_id") or doc.get("email")
+            doc_nombre = doc.get("name") or doc.get("nombre") or "Doctor"
+            
+            if not cal_id:
+                continue
+            
+            try:
+                eventos = calendario.events().list(calendarId=cal_id, timeMin=inicio, timeMax=fin, singleEvents=True).execute().get('items', [])
+            except Exception as e:
+                log(f"Error leyendo calendario para encuesta {cal_id}: {e}")
+                continue
+
+            for evento in eventos:
+                titulo = evento.get('summary', '')
+                
+                # --- NUEVO FILTRO: Solo enviar si la cita fue confirmada (contiene ✅) ---
+                if "✅" not in titulo:
+                    continue
+                
+                descripcion = evento.get('description', '')
+                texto = f"{titulo} {descripcion}"
+                digitos = "".join(filter(str.isdigit, texto))
+                
+                if len(digitos) >= 10:
+                    telefono_paciente = "52" + digitos[-10:]
+                    nombre_paciente = extraer_nombre_limpio(titulo)
+                    
+                    # Mensaje de encuesta
+                    mensaje_encuesta = (
+                        f"Hola *{nombre_paciente}*, de parte de *{doc_nombre}* esperamos que tu cita de hoy haya sido excelente. "
+                        f"¿Qué tan satisfecho(a) te sientes con la atención recibida del 1 al 10? "
+                        f"Puedes responder directamente a este mensaje con tu calificación y un breve comentario. ¡Gracias!"
+                    )
+                    
+                    enviar_mensaje(telefono_paciente, "text", contenido=mensaje_encuesta)
+                    log(f"Encuesta nocturna enviada a paciente confirmado {telefono_paciente}")
+
+        return jsonify({"status": "success", "message": "Encuestas nocturnas enviadas correctamente a citas confirmadas."}), 200
+
+    except Exception as e:
+        print(f"Error en encuesta nocturna: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 def marcar_evento_calendario(telefono_recibido, accion):
     tel_buscado = limpiar_telefono(telefono_recibido)
@@ -448,6 +539,54 @@ def procesar_webhook_asincrono(data):
                     tel_doc = "".join(filter(str.isdigit, str(wa_link)))
                     if tel_doc:
                         enviar_mensaje(tel_doc, "text", contenido=f"❌ El paciente *{nombre_paciente}* indicó que necesita reagendar su cita de hoy.\n *IMPORTANTE* comunicarte con él, para que no pierda su cita.")
+
+            # 3. Detectar si el mensaje es una calificación de encuesta (número del 1 al 10)
+            else:
+                match_calificacion = re.search(r'\b([1-9]|10)\b', texto)
+                if match_calificacion and not any(k in texto for k in ["si", "sí", "no", "confirmo", "cancelar", "reagendar"]):
+                    calificacion_num = int(match_calificacion.group(1))
+                    comentario_texto = texto
+
+                    cal_id_encontrado = None
+                    if supabase and calendario:
+                        try:
+                            zona_mexico = pytz.timezone('America/Mexico_City')
+                            ahora_mexico = datetime.datetime.now(zona_mexico)
+                            inicio_dia = ahora_mexico.replace(hour=0, minute=0, second=0).astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
+                            fin_dia = ahora_mexico.replace(hour=23, minute=59, second=59).astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
+                            
+                            resp_docs = supabase.table("Doctores").select("*").execute()
+                            for d in (resp_docs.data or []):
+                                c_id = d.get("calendar_id") or d.get("email")
+                                if not c_id: continue
+                                
+                                evs = calendario.events().list(calendarId=c_id, timeMin=inicio_dia, timeMax=fin_dia, singleEvents=True).execute().get('items', [])
+                                for ev in evs:
+                                    txt_evento = f"{ev.get('summary', '')} {ev.get('description', '')}"
+                                    if limpiar_telefono(telefono_cliente) in limpiar_telefono(txt_evento):
+                                        cal_id_encontrado = c_id
+                                        break
+                                if cal_id_encontrado:
+                                    break
+                        except Exception as e:
+                            log(f"Error buscando doctor para encuesta: {e}")
+
+                    if supabase and cal_id_encontrado:
+                        try:
+                            supabase.table("Encuestas").insert({
+                                "calendar_id": cal_id_encontrado,
+                                "telefono_paciente": telefono_cliente,
+                                "calificacion": calificacion_num,
+                                "comentario": comentario_texto
+                            }).execute()
+                            log(f"Encuesta guardada con éxito para el doctor {cal_id_encontrado}")
+                        except Exception as ex:
+                            log(f"Error insertando encuesta en Supabase: {ex}")
+
+                    respuesta_agradecimiento = "¡Muchas gracias por tu retroalimentación! Nos ayuda a mejorar cada día. ¡Que tengas excelente semana! *Stein Asistente Virtual*"
+                    enviar_mensaje(telefono_cliente, "text", contenido=respuesta_agradecimiento)
+                    return
+
     except Exception as e:
         log(f"Error en webhook asíncrono: {e}")
 
