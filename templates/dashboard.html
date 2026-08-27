@@ -22,28 +22,46 @@
             <div class="col-12">
                 <div class="p-4 bg-white rounded-4 shadow-sm border-0 mb-4">
                     <h2 class="fw-bold text-dark">Bienvenido a tu Panel de Control</h2>
-                    <p class="text-muted">Desde aquí podrás visualizar las confirmaciones de tus pacientes vinculadas a tu Google Calendar y Supabase.</p>
+                    <p class="text-muted">Monitorea el flujo de citas procesadas para tu cobro por servicio y las calificaciones de satisfacción de tus pacientes.</p>
                 </div>
             </div>
         </div>
 
+        <!-- Tarjetas de Métricas (Operación, Monetización y Calidad) -->
         <div class="row g-4">
-            <div class="col-md-4">
+            <!-- 1. Citas Enviadas / Gestionadas (Monetización) -->
+            <div class="col-md-3">
                 <div class="card border-0 shadow-sm rounded-4 p-3 bg-white border-start border-primary border-4">
-                    <h6 class="text-muted">Citas para Hoy</h6>
-                    <h3 class="fw-bold text-primary mb-0">--</h3>
+                    <h6 class="text-muted">Citas Enviadas / Total</h6>
+                    <h3 class="fw-bold text-primary mb-0">{{ datos.citas_enviadas }}</h3>
+                    <small class="text-muted">Base para cálculo de cobro</small>
                 </div>
             </div>
-            <div class="col-md-4">
+
+            <!-- 2. Confirmadas -->
+            <div class="col-md-3">
                 <div class="card border-0 shadow-sm rounded-4 p-3 bg-white border-start border-success border-4">
                     <h6 class="text-muted">Confirmadas</h6>
-                    <h3 class="fw-bold text-success mb-0">--</h3>
+                    <h3 class="fw-bold text-success mb-0">{{ datos.citas_confirmadas }}</h3>
+                    <small class="text-muted">Asistencia asegurada</small>
                 </div>
             </div>
-            <div class="col-md-4">
+
+            <!-- 3. Canceladas / Reagendar -->
+            <div class="col-md-3">
                 <div class="card border-0 shadow-sm rounded-4 p-3 bg-white border-start border-danger border-4">
                     <h6 class="text-muted">Canceladas / Reagendar</h6>
-                    <h3 class="fw-bold text-danger mb-0">--</h3>
+                    <h3 class="fw-bold text-danger mb-0">{{ datos.citas_canceladas }}</h3>
+                    <small class="text-muted">Requieren atención</small>
+                </div>
+            </div>
+
+            <!-- 4. Satisfacción Promedio (Nueva) -->
+            <div class="col-md-3">
+                <div class="card border-0 shadow-sm rounded-4 p-3 bg-white border-start border-warning border-4">
+                    <h6 class="text-muted">Satisfacción Promedio</h6>
+                    <h3 class="fw-bold text-warning mb-0">{{ datos.promedio_satisfaccion }}</h3>
+                    <small class="text-muted">Total encuestas: {{ datos.total_encuestas }}</small>
                 </div>
             </div>
         </div>
