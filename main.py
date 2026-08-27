@@ -321,7 +321,7 @@ def procesar_webhook_asincrono(data):
                 doc_cal_id = doc_encontrado.get("calendar_id")
 
                 if any(k in texto for k in ["empecemos"]):
-                    resp_doc = '¡Perfecto! es un buen momento para empezar el día, "Stein tu Asistente Virtual" *activado*'
+                    resp_doc = '¡Perfecto! es un buen momento para empezar el día, "Stein tu Asistente Virtual" *activado*. \n *nota: Recuerda preparate para epoca de lluvias'
                     enviar_mensaje(telefono_cliente, "text", contenido=resp_doc)
                     return
 
@@ -430,7 +430,7 @@ def procesar_webhook_asincrono(data):
                 if doc:
                     doc_nombre = doc.get("name") or doc.get("nombre") or "Doctor"
                     wa_link = doc.get("wa_link") or doc.get("link") or ""
-                    respuesta_texto = f"*¡Perfecto!* Se ha confirmado tu cita de hoy con {doc_nombre}. Dudas o aclaraciones, comunícate aquí: {wa_link}.\n *¡Que tenga un excelente día!*"
+                    respuesta_texto = f"*¡Perfecto!* Se ha confirmado tu cita de hoy con {doc_nombre}. Dudas o aclaraciones, comunícate aquí: {wa_link}.\n *nota: Recuerda preparate para epoca de lluvias*\n *¡Que tenga un excelente día!*"
                     enviar_mensaje(telefono_cliente, "text", contenido=respuesta_texto)
                     
                     tel_doc = "".join(filter(str.isdigit, str(wa_link)))
