@@ -9,7 +9,7 @@
 <body class="bg-light">
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
         <div class="container">
-            <a class="navbar-brand fw-bold" href="#">🏥 Asistente Virtual de Citas</a>
+            <a class="navbar-brand fw-bold" href="#">🏥 Stein Asistente Virtual Pro</a>
             <div class="d-flex align-items-center">
                 <span class="text-white me-3 d-none d-md-inline">👤 {{ user.name if user.name else user.id }}</span>
                 <a href="/logout" class="btn btn-outline-light btn-sm rounded-pill px-3">Cerrar Sesión</a>
@@ -22,7 +22,8 @@
             <div class="col-12">
                 <div class="p-4 bg-white rounded-4 shadow-sm border-0 mb-4">
                     <h2 class="fw-bold text-dark">Bienvenido a tu Panel de Control</h2>
-                    <p class="text-muted">Monitorea el flujo de citas procesadas para tu cobro por servicio y las calificaciones de satisfacción de tus pacientes.</p>
+                    <p class="text-muted">Monitorea el flujo de citas procesadas, confirmadas, canceladas y las calificaciones de satisfacción de tus clientes.</p>
+                    <p class="text-muted">Toda la información procesada en esta pantalla se realizara un balance y seguimiento y se te cobrara solo lo justo.</p>
                 </div>
             </div>
         </div>
@@ -34,7 +35,7 @@
                 <div class="card border-0 shadow-sm rounded-4 p-3 bg-white border-start border-primary border-4">
                     <h6 class="text-muted">Citas Enviadas / Total</h6>
                     <h3 class="fw-bold text-primary mb-0">{{ datos.citas_enviadas }}</h3>
-                    <small class="text-muted">Base para cálculo de cobro</small>
+                    <small class="text-muted">Balance total de citas procesadas</small>
                 </div>
             </div>
 
