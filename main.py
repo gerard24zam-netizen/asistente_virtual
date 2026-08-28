@@ -156,7 +156,15 @@ def forgot_password():
 
 @app.route('/')
 def index():
-    return redirect(url_for('login'))
+    # Si no ha iniciado sesión, lo mandamos al login
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    # Si ya inició sesión, aquí cargamos su panel principal
+    user_id = session['user_id']
+    
+    # Puedes renderizar tu plantilla de inicio/panel aquí (ej. index.html o dashboard.html)
+    return render_template('index.html', user_id=user_id)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
