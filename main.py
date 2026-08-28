@@ -92,6 +92,7 @@ def register():
     error = None
     success = None
     if request.method == 'POST':
+        usuario = request.form.get('usuario').strip().lower() # Normalizamos a minúsculas sin espacios
         nombre = request.form.get('nombre')
         ocupacion = request.form.get('ocupacion')
         telefono = request.form.get('telefono')
@@ -99,35 +100,36 @@ def register():
         password = request.form.get('password')
         
         try:
-            # Validar si el correo ya está registrado
-            existing = supabase.table('Doctores').select('*').eq('calendar_id', email).execute()
-            if existing.data and len(existing.data) > 0:
-                error = "Este correo ya se encuentra registrado en el sistema."
-            else:
-                # Limpiar el teléfono para dejar solo dígitos
-                telefono_limpio = re.sub(r'\D', '', telefono)
-                
-                # Si el usuario ingresó 10 dígitos (México), anteponemos el código de país '52' automáticamente.
-                if len(telefono_limpio) == 10:
-                    telefono_limpio = '52' + telefono_limpio
-                
-                # Generar el enlace de WhatsApp automáticamente
-                wa_link = f"https://wa.me/{telefono_limpio}"
-                
-                hashed_password = generate_password_hash(password)
-                
-                # Inserción con los campos exactos de tu tabla en Supabase
-                supabase.table('Doctores').insert({
-                    'id': str(uuid.uuid4()),
-                    'calendar_id': email,
-                    'password_hash': hashed_password,
-                    'ocupation': ocupacion,
-                    'wa_link': wa_link
-                    # Si tu tabla también tiene una columna 'name' o 'nombre', agrégala aquí:
-                    # 'name': nombre 
-                }).execute()
-                
-                success = "¡Cuenta creada exitosamente!"
+            # 1. Validar si el nombre de usuario (ID) ya existe
+            existing_id = supabase.table('Doctores').select('*').eq('id', usuario).execute()
+            if existing_id.data and len(existing_id.data) > 0:
+                error = "El nombre de usuario ya está en uso. Por favor elige otro."
+                return render_template('register.html', error=error)
+            
+            # 2. Validar si el correo ya está registrado
+            existing_email = supabase.table('Doctores').select('*').eq('calendar_id', email).execute()
+            if existing_email.data and len(existing_email.data) > 0:
+                error = "Este correo electrónico ya se encuentra registrado en el sistema."
+                return render_template('register.html', error=error)
+            
+            # Limpiar el teléfono y generar el enlace de WhatsApp
+            telefono_limpio = re.sub(r'\D', '', telefono)
+            if len(telefono_limpio) == 10:
+                telefono_limpio = '52' + telefono_limpio
+            wa_link = f"https://wa.me/{telefono_limpio}"
+            
+            hashed_password = generate_password_hash(password)
+            
+            # Inserción usando el ID personalizado que eligió el usuario
+            supabase.table('Doctores').insert({
+                'id': usuario,
+                'calendar_id': email,
+                'password_hash': hashed_password,
+                'ocupation': ocupacion,
+                'wa_link': wa_link
+            }).execute()
+            
+            success = "¡Cuenta creada exitosamente!"
         except Exception as e:
             print(f"Error al registrar usuario: {e}")
             error = "Ocurrió un error interno al procesar el registro."
