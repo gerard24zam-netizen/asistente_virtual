@@ -274,6 +274,29 @@ def logout():
     session.pop('usuario_web', None)
     return redirect(url_for('login'))
 
+@app.route('/toggle-encuestas', methods=['POST'])
+def toggle_encuestas():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    user_id = session['user_id']
+    
+    try:
+        # Consultamos el estado actual usando la columna 'enviar_encuesta'
+        res = supabase.table('Doctores').select('enviar_encuesta').eq('id', user_id).execute()
+        current_status = res.data[0].get('enviar_encuesta', False) if res.data else False
+        
+        # Invertimos el valor (de false a true o de true a false)
+        new_status = not current_status
+        
+        # Actualizamos en Supabase
+        supabase.table('Doctores').update({'enviar_encuesta': new_status}).eq('id', user_id).execute()
+        
+    except Exception as e:
+        print(f"Error al cambiar estado de encuestas: {e}")
+        
+    return redirect(url_for('index'))
+
 @app.route('/status')
 def home():
     return "API Activa", 200
