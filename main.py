@@ -150,24 +150,76 @@ def forgot_password():
     
     if request.method == 'POST':
         user_id = request.form.get('username')
-        calendar_id = request.form.get('calendar_id')
-        new_password = request.form.get('new_password')
+        calendar_id = request.form.get('calendar_id') # Este es el correo registrado
         
         try:
-            # Verificamos que el ID y el correo (calendar_id) coincidan en Supabase
+            # Validamos que el usuario y el correo coincidan en Supabase
             res = supabase.table('Doctores').select('*').eq('id', user_id).eq('calendar_id', calendar_id).execute()
             
             if res.data:
-                # Si coinciden, generamos el nuevo hash y actualizamos
-                new_hash = generate_password_hash(new_password)
-                supabase.table('Doctores').update({'password_hash': new_hash}).eq('id', user_id).execute()
-                success = "¡Contraseña restablecida con éxito! Ya puedes iniciar sesión."
+                # Generamos un token seguro con el ID del usuario
+                s = get_serializer()
+                token = s.dumps(user_id, salt='password-reset-salt')
+                
+                # Construimos el enlace de recuperación
+                reset_url = url_for('reset_with_token', token=token, _external=True)
+                
+                # Configuramos el envío del correo (ejemplo usando Gmail SMTP)
+                # NOTA: Debes configurar tu correo remitente y contraseña de aplicación en Render (Variables de Entorno)
+                remitente = os.environ.get('MAIL_USERNAME', 'tucorreo@gmail.com')
+                password_correo = os.environ.get('MAIL_PASSWORD', 'tu_password_de_aplicacion')
+                
+                msg = MIMEMultipart()
+                msg['From'] = remitente
+                msg['To'] = calendar_id
+                msg['Subject'] = "Recuperación de Contraseña - Stein Asistente Virtual"
+                
+                cuerpo = f"""
+                Hola, has solicitado restablecer tu contraseña. 
+                Haz clic en el siguiente enlace para cambiarla (expira en 15 minutos):
+                
+                {reset_url}
+                
+                Si tú no lo solicitaste, ignora este mensaje.
+                """
+                msg.attach(MIMEText(cuerpo, 'plain'))
+                
+                server = smtplib.SMTP('smtp.gmail.com', 587)
+                server.starttls()
+                server.login(remitente, password_correo)
+                server.sendmail(remitente, calendar_id, msg.as_string())
+                server.quit()
+                
+                success = "Se ha enviado un enlace de recuperación a tu correo electrónico."
             else:
-                error = "Los datos ingresados no coinciden con ningún registro."
+                error = "El usuario o el correo no coinciden con nuestros registros."
         except Exception as e:
-            error = f"Ocurrió un error: {e}"
+            error = f"Error al enviar el correo: {e}"
             
     return render_template('forgot_password.html', error=error, success=success)
+
+@app.route('/reset-password/<token>', methods=['GET', 'POST'])
+def reset_with_token(token):
+    s = get_serializer()
+    try:
+        # El token expira en 900 segundos (15 minutos)
+        user_id = s.loads(token, salt='password-reset-salt', max_age=900)
+    except Exception:
+        return "El enlace de recuperación es inválido o ya ha expirado.", 400
+        
+    error = None
+    success = None
+    
+    if request.method == 'POST':
+        new_password = request.form.get('new_password')
+        try:
+            new_hash = generate_password_hash(new_password)
+            supabase.table('Doctores').update({'password_hash': new_hash}).eq('id', user_id).execute()
+            success = "¡Contraseña actualizada con éxito! Ya puedes iniciar sesión."
+        except Exception as e:
+            error = f"Error al actualizar: {e}"
+            
+    return render_template('reset_token.html', error=error, success=success)
 
 @app.route('/')
 def index():
