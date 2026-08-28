@@ -6,11 +6,15 @@ import datetime
 import pytz
 import threading
 import uuid
+import smtplib
 from flask import Flask, request, jsonify, render_template, redirect, url_for, session
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from supabase import create_client
 from werkzeug.security import generate_password_hash, check_password_hash
+from itsdangerous import URLSafeTimedSerializer as Serializer
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 app = Flask(__name__)
 
@@ -25,6 +29,9 @@ app.secret_key = 'tu_clave_secreta'  # Necesario para que funcione session
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
+
+def get_serializer():
+    return Serializer(app.secret_key)
 
 def log(msg):
     print(f"DEBUG: {msg}", flush=True)
