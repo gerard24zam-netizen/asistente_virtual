@@ -268,8 +268,6 @@ def dashboard():
     
     return render_template('dashboard.html', user=doctor_actual, datos=metricas)
 
-from werkzeug.security import generate_password_hash, check_password_hash
-
 @app.route('/change-password', methods=['GET', 'POST'])
 def change_password():
     if 'user_id' not in session:
