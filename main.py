@@ -247,8 +247,8 @@ def forgot_password():
                     )
                 }
                 
-                 resend.Emails.send(params)
-                 success = "Se ha enviado un enlace de recuperación a tu correo electrónico."
+                resend.Emails.send(params)
+                success = "Se ha enviado un enlace de recuperación a tu correo electrónico."
             else:
                 error = "El usuario o el correo no coinciden con nuestros registros."
         except Exception as e:
