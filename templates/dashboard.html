@@ -7,16 +7,29 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 <body class="bg-light">
-    <nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
-        <div class="container">
-            <a class="navbar-brand fw-bold" href="#">🏥 Stein Asistente Virtual Pro</a>
-            <div class="d-flex align-items-center">
-                <span class="text-white me-3 d-none d-md-inline">👤 {{ user.name if user.name else user.id }}</span>
-                <a href="/logout" class="btn btn-outline-light btn-sm rounded-pill px-3">Cerrar Sesión</a>
-            </div>
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
+    <div class="container">
+        <!-- Menú desplegable a la izquierda -->
+        <div class="dropdown me-3">
+            <button class="btn btn-outline-light dropdown-toggle rounded-pill px-3" type="button" id="menuDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                ☰ Menú
+            </button>
+            <ul class="dropdown-menu shadow border-0 rounded-4 mt-2" aria-labelledby="menuDropdown">
+                <li><a class="dropdown-item py-2" href="/">📊 Panel Principal</a></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><a class="dropdown-item py-2 text-danger" href="/change-password">🔒 Cambiar Contraseña</a></li>
+            </ul>
         </div>
-    </nav>
 
+        <a class="navbar-brand fw-bold" href="#">🏥 Stein Asistente Virtual Pro</a>
+        
+        <div class="d-flex align-items-center">
+            <span class="text-white me-3 d-none d-md-inline">👤 {{ user.name if user.name else user.id }}</span>
+            <a href="/logout" class="btn btn-outline-light btn-sm rounded-pill px-3">Cerrar Sesión</a>
+        </div>
+    </div>
+</nav>
+    
     <div class="container my-5">
         <div class="row">
             <div class="col-12">
