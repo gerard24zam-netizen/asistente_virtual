@@ -154,46 +154,34 @@ def forgot_password():
     
     if request.method == 'POST':
         user_id = request.form.get('username')
-        calendar_id = request.form.get('calendar_id') # Este es el correo registrado
+        calendar_id = request.form.get('calendar_id')
         
         try:
-            # Validamos que el usuario y el correo coincidan en Supabase
             res = supabase.table('Doctores').select('*').eq('id', user_id).eq('calendar_id', calendar_id).execute()
             
             if res.data:
-                # Generamos un token seguro con el ID del usuario
                 s = get_serializer()
                 token = s.dumps(user_id, salt='password-reset-salt')
-                
-                # Construimos el enlace de recuperación
                 reset_url = url_for('reset_with_token', token=token, _external=True)
                 
-                # Configuramos el envío del correo (ejemplo usando Gmail SMTP)
-                # NOTA: Debes configurar tu correo remitente y contraseña de aplicación en Render (Variables de Entorno)
-                remitente = os.environ.get('MAIL_USERNAME', 'tucorreo@gmail.com')
-                password_correo = os.environ.get('MAIL_PASSWORD', 'tu_password_de_aplicacion')
+                params = {
+                    "from": "Stein Asistente Virtual <onboarding@resend.dev>",
+                    "to": [calendar_id],
+                    "subject": "Recuperación de Contraseña",
+                    "html": (
+                        '<div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto; border: 1px solid #e2e8f0; border-radius: 10px;">'
+                        '<h3 style="color: #0d6efd; text-align: center;">Recuperación de Contraseña</h3>'
+                        '<p>Hola, has solicitado restablecer tu contraseña en <b>Stein Asistente Virtual</b>.</p>'
+                        '<p>Haz clic en el siguiente botón para cambiarla (expira en 15 minutos):</p>'
+                        '<div style="text-align: center; margin: 30px 0;">'
+                        f'<a href="{reset_url}" style="background-color: #0d6efd; color: white; padding: 12px 25px; text-decoration: none; border-radius: 50px; font-weight: bold; display: inline-block;">Restablecer Contraseña</a>'
+                        '</div>'
+                        '<p style="color: #6c757d; font-size: 12px; text-align: center;">Si tú no lo solicitaste, ignora este mensaje.</p>'
+                        '</div>'
+                    )
+                }
                 
-                msg = MIMEMultipart()
-                msg['From'] = remitente
-                msg['To'] = calendar_id
-                msg['Subject'] = "Recuperación de Contraseña - Stein Asistente Virtual"
-                
-                cuerpo = f"""
-                Hola, has solicitado restablecer tu contraseña. 
-                Haz clic en el siguiente enlace para cambiarla (expira en 15 minutos):
-                
-                {reset_url}
-                
-                Si tú no lo solicitaste, ignora este mensaje.
-                """
-                msg.attach(MIMEText(cuerpo, 'plain'))
-                
-                server = smtplib.SMTP('smtp.gmail.com', 587)
-                server.starttls()
-                server.login(remitente, password_correo)
-                server.sendmail(remitente, calendar_id, msg.as_string())
-                server.quit()
-                
+                resend.Emails.send(params)
                 success = "Se ha enviado un enlace de recuperación a tu correo electrónico."
             else:
                 error = "El usuario o el correo no coinciden con nuestros registros."
