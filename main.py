@@ -189,7 +189,7 @@ def forgot_password():
             error = f"Error al enviar el correo: {e}"
             
     return render_template('forgot_password.html', error=error, success=success)
-
+    
 @app.route('/reset-password/<token>', methods=['GET', 'POST'])
 def reset_with_token(token):
     s = get_serializer()
@@ -212,49 +212,6 @@ def reset_with_token(token):
             error = f"Error al actualizar: {e}"
             
     return render_template('reset_token.html', error=error, success=success)
-
-@app.route('/forgot-password', methods=['GET', 'POST'])
-def forgot_password():
-    error = None
-    success = None
-    
-    if request.method == 'POST':
-        user_id = request.form.get('username')
-        calendar_id = request.form.get('calendar_id')
-        
-        try:
-            res = supabase.table('Doctores').select('*').eq('id', user_id).eq('calendar_id', calendar_id).execute()
-            
-            if res.data:
-                s = get_serializer()
-                token = s.dumps(user_id, salt='password-reset-salt')
-                reset_url = url_for('reset_with_token', token=token, _external=True)
-                
-                params = {
-                    "from": "Stein Asistente Virtual <onboarding@resend.dev>",
-                    "to": [calendar_id],
-                    "subject": "Recuperación de Contraseña",
-                    "html": (
-                        '<div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto; border: 1px solid #e2e8f0; border-radius: 10px;">'
-                        '<h3 style="color: #0d6efd; text-align: center;">Recuperación de Contraseña</h3>'
-                        '<p>Hola, has solicitado restablecer tu contraseña en <b>Stein Asistente Virtual</b>.</p>'
-                        '<p>Haz clic en el siguiente botón para cambiarla (expira en 15 minutos):</p>'
-                        '<div style="text-align: center; margin: 30px 0;">'
-                        f'<a href="{reset_url}" style="background-color: #0d6efd; color: white; padding: 12px 25px; text-decoration: none; border-radius: 50px; font-weight: bold; display: inline-block;">Restablecer Contraseña</a>'
-                        '</div>'
-                        '<p style="color: #6c757d; font-size: 12px; text-align: center;">Si tú no lo solicitaste, ignora este mensaje.</p>'
-                        '</div>'
-                    )
-                }
-                
-                resend.Emails.send(params)
-                success = "Se ha enviado un enlace de recuperación a tu correo electrónico."
-            else:
-                error = "El usuario o el correo no coinciden con nuestros registros."
-        except Exception as e:
-            error = f"Error al enviar el correo: {e}"
-            
-    return render_template('forgot_password.html', error=error, success=success)
 
 @app.route('/')
 def index():
