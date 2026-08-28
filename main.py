@@ -161,8 +161,16 @@ def index():
     
     user_id = session['user_id']
     
-    # Cambia 'index.html' por el nombre exacto de tu archivo HTML principal
-    return render_template('dashboard.html', user_id=user_id)
+    try:
+        # Consultamos el registro completo del doctor en Supabase
+        response = supabase.table('Doctores').select('*').eq('id', user_id).execute()
+        user_data = response.data[0] if response.data else {}
+    except Exception as e:
+        print(f"Error al cargar datos del panel: {e}")
+        user_data = {}
+    
+    # Pasamos el diccionario completo bajo la variable 'user'
+    return render_template('dashboard.html', user=user_data)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
