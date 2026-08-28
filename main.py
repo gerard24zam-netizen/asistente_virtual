@@ -235,16 +235,28 @@ def index():
         user_data = {}
         citas = []
 
-    # 3. Calcular los totales según el estado en la tabla 'citas_procesadas'
+    # 3. Calcular los totales usando las claves exactas que pide el dashboard
     total_enviadas = len(citas)
     total_confirmadas = sum(1 for c in citas if c.get('estado') in ['confirmada', 'Confirmada'])
     total_canceladas = sum(1 for c in citas if c.get('estado') in ['cancelada', 'reagendar', 'Cancelada'])
 
-    # 4. Estructuramos el diccionario 'datos' para tu dashboard.html
+    # 4. Calcular el promedio de satisfacción real en escala de 1 a 10
+    # Extraemos los valores de calificación (asegúrate de que en tu tabla el campo se llame 'calificacion' o 'satisfaccion')
+    calificaciones = [float(c.get('calificacion')) for c in citas if c.get('calificacion') is not None]
+    total_encuestas = len(calificaciones)
+    
+    if total_encuestas > 0:
+        promedio = sum(calificaciones) / total_encuestas
+        promedio_satisfaccion = f"{promedio:.1f}"
+    else:
+        promedio_satisfaccion = "0.0"
+
     datos = {
         'citas_enviadas': total_enviadas,
-        'confirmadas': total_confirmadas,
-        'canceladas': total_canceladas
+        'citas_confirmadas': total_confirmadas,
+        'citas_canceladas': total_canceladas,
+        'promedio_satisfaccion': promedio_satisfaccion,
+        'total_encuestas': total_encuestas
     }
 
     return render_template('dashboard.html', user=user_data, datos=datos)
