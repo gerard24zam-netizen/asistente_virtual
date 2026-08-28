@@ -185,7 +185,8 @@ def index():
     }
     
     return render_template('dashboard.html', user=user_data, datos=datos)
-
+# Línea temporal para actualizar la contraseña del usuario 'default' a '123456'
+supabase.table('Doctores').update({'password_hash': generate_password_hash('123456')}).eq('id', 'default').execute()
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     error = None
