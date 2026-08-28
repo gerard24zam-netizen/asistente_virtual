@@ -93,6 +93,22 @@
         const reqNumber = document.getElementById('req-number');
         const reqSpecial = document.getElementById('req-special');
 
+        const togglePassword = document.getElementById('togglePassword');
+        const toggleIcon = document.getElementById('toggleIcon');
+
+    togglePassword.addEventListener('click', function () {
+    // Alternar el tipo de input entre password y text
+    const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+    passwordInput.setAttribute('type', type);
+    
+    // Cambiar el icono del ojo
+    if (type === 'text') {
+        toggleIcon.className = 'bi bi-eye-slash';
+    } else {
+        toggleIcon.className = 'bi bi-eye';
+    }
+});
+
         passwordInput.addEventListener('input', function() {
             const val = passwordInput.value;
             
