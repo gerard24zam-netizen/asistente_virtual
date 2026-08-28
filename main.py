@@ -138,21 +138,29 @@ def register():
 
 @app.route('/forgot-password', methods=['GET', 'POST'])
 def forgot_password():
-    message = None
+    error = None
+    success = None
+    
     if request.method == 'POST':
-        email = request.form.get('email')
+        user_id = request.form.get('username')
+        calendar_id = request.form.get('calendar_id')
+        new_password = request.form.get('new_password')
+        
         try:
-            # Verificamos si el correo existe
-            user = supabase.table('Doctores').select('*').eq('calendar_id', email).execute()
-            if user.data and len(user.data) > 0:
-                message = "Se han enviado las instrucciones de recuperación a tu correo electrónico."
-            else:
-                message = "El correo ingresado no está asociado a ninguna cuenta activa."
-        except Exception as e:
-            print(f"Error en recuperación: {e}")
-            message = "Ocurrió un error al procesar tu solicitud."
+            # Verificamos que el ID y el correo (calendar_id) coincidan en Supabase
+            res = supabase.table('Doctores').select('*').eq('id', user_id).eq('calendar_id', calendar_id).execute()
             
-    return render_template('forgot_password.html', message=message)
+            if res.data:
+                # Si coinciden, generamos el nuevo hash y actualizamos
+                new_hash = generate_password_hash(new_password)
+                supabase.table('Doctores').update({'password_hash': new_hash}).eq('id', user_id).execute()
+                success = "¡Contraseña restablecida con éxito! Ya puedes iniciar sesión."
+            else:
+                error = "Los datos ingresados no coinciden con ningún registro."
+        except Exception as e:
+            error = f"Ocurrió un error: {e}"
+            
+    return render_template('forgot_password.html', error=error, success=success)
 
 @app.route('/')
 def index():
