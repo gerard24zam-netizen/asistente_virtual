@@ -60,7 +60,12 @@
             <div class="card shadow-sm border-0 rounded-4 p-4 mb-4">
                 <h5 class="fw-bold mb-2">Módulo de Encuestas</h5>
                 <p class="text-muted small">Activa el envío automático de encuestas de satisfacción (Costo extra aplicable).</p>
-    
+            <div class="col-md-3">
+                <div class="card border-0 shadow-sm rounded-4 p-3 bg-white border-start border-warning border-4">
+                    <h6 class="text-muted">Satisfacción Promedio</h6>
+                    <h3 class="fw-bold text-warning mb-0">{{ datos.promedio_satisfaccion }}</h3>
+                    <small class="text-muted">Total encuestas: {{ datos.total_encuestas }}</small>
+                </div>
                 <form action="/toggle-encuestas" method="POST">
                     {% if user.enviar_encuesta %}
                         <button type="submit" class="btn btn-success rounded-pill px-4">
@@ -68,17 +73,11 @@
                         </button>
                     {% else %}
                         <button type="submit" class="btn btn-outline-primary rounded-pill px-4">
-                            ⚡ Activar Encuestas (Costo Extra)
+                            ⚡ Activar Encuestas
                         </button>
                     {% endif %}
                 </form>
             </div>
-            <div class="col-md-3">
-                <div class="card border-0 shadow-sm rounded-4 p-3 bg-white border-start border-warning border-4">
-                    <h6 class="text-muted">Satisfacción Promedio</h6>
-                    <h3 class="fw-bold text-warning mb-0">{{ datos.promedio_satisfaccion }}</h3>
-                    <small class="text-muted">Total encuestas: {{ datos.total_encuestas }}</small>
-                </div>
             </div>
         </div>
     </div>
