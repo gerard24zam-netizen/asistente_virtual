@@ -28,6 +28,11 @@
 
             <form method="POST" id="registerForm">
                 <div class="mb-3">
+                    <label for="usuario" class="form-label small fw-bold">Nombre de Usuario (ID único)</label>
+                    <input type="text" class="form-control rounded-3" id="usuario" name="usuario" required placeholder="Ej. gerardo_psi (sin espacios)">
+                    <small class="text-muted" style="font-size: 0.75rem;">Este será tu identificador corto para iniciar sesión.</small>
+                </div>
+                <div class="mb-3">
                     <label for="nombre" class="form-label small fw-bold">Nombre Completo</label>
                     <input type="text" class="form-control rounded-3" id="nombre" name="nombre" required placeholder="Ej. Dr. Gerardo Pérez">
                 </div>
