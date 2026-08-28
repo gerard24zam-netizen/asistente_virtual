@@ -230,7 +230,7 @@ def forgot_password():
                 token = s.dumps(user_id, salt='password-reset-salt')
                 reset_url = url_for('reset_with_token', token=token, _external=True)
                 
-            params = {
+                params = {
                     "from": "Stein Asistente Virtual <onboarding@resend.dev>",
                     "to": [calendar_id],
                     "subject": "Recuperación de Contraseña",
@@ -247,8 +247,8 @@ def forgot_password():
                     )
                 }
                 
-                resend.Emails.send(params)
-                success = "Se ha enviado un enlace de recuperación a tu correo electrónico."
+                 resend.Emails.send(params)
+                 success = "Se ha enviado un enlace de recuperación a tu correo electrónico."
             else:
                 error = "El usuario o el correo no coinciden con nuestros registros."
         except Exception as e:
