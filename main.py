@@ -160,33 +160,36 @@ def index():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    error = None
     if request.method == 'POST':
-        email = request.form.get('email')
+        login_input = request.form.get('username')
         password = request.form.get('password')
         
         try:
-            # Buscamos al doctor en Supabase por su correo (calendar_id)
-            response = supabase.table('Doctores').select('*').eq('calendar_id', email).execute()
+            user_data = None
             
-            if response.data and len(response.data) > 0:
-                doctor = response.data[0]
-                stored_password_hash = doctor.get('password_hash')
-                
-                # Verificamos si la contraseña coincide con el hash guardado
-                if stored_password_hash and check_password_hash(stored_password_hash, password):
-                    # Guardamos la sesión vinculada a su correo/calendar_id
-                    session['usuario_web'] = doctor.get('calendar_id')
-                    return redirect(url_for('dashboard'))
-                else:
-                    return render_template('login.html', error="Contraseña incorrecta.")
+            # 1. Intentar buscar por el ID de usuario personalizado
+            res_id = supabase.table('Doctores').select('*').eq('id', login_input).execute()
+            if res_id.data and len(res_id.data) > 0:
+                user_data = res_id.data[0]
             else:
-                return render_template('login.html', error="El usuario no está registrado.")
-                
-        except Exception as e:
-            print(f"Error en el login: {e}")
-            return render_template('login.html', error="Error interno al iniciar sesión.")
+                # 2. Si no existe, intentar buscar por correo electrónico (calendar_id)
+                res_email = supabase.table('Doctores').select('*').eq('calendar_id', login_input).execute()
+                if res_email.data and len(res_email.data) > 0:
+                    user_data = res_email.data[0]
             
-    return render_template('login.html', error=None)
+            # Verificar si se encontró el usuario y la contraseña coincide
+            if user_data and check_password_hash(user_data['password_hash'], password):
+                session['user_id'] = user_data['id']
+                session['calendar_id'] = user_data['calendar_id']
+                return redirect(url_for('index')) # O la ruta principal de tu panel
+            else:
+                error = "Usuario/Correo o contraseña incorrectos."
+        except Exception as e:
+            print(f"Error en login: {e}")
+            error = "Ocurrió un error al procesar el inicio de sesión."
+            
+    return render_template('login.html', error=error)
 
 @app.route('/dashboard')
 def dashboard():
