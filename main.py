@@ -267,7 +267,43 @@ def dashboard():
     }
     
     return render_template('dashboard.html', user=doctor_actual, datos=metricas)
+
+from werkzeug.security import generate_password_hash, check_password_hash
+
+@app.route('/change-password', methods=['GET', 'POST'])
+def change_password():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
     
+    error = None
+    success = None
+    
+    if request.method == 'POST':
+        current_password = request.form.get('current_password')
+        new_password = request.form.get('new_password')
+        user_id = session['user_id']
+        
+        try:
+            # Consultamos el hash actual en la base de datos
+            res = supabase.table('Doctores').select('password_hash').eq('id', user_id).execute()
+            if res.data:
+                stored_hash = res.data[0].get('password_hash')
+                
+                # Verificamos que la contraseña actual sea correcta
+                if stored_hash and check_password_hash(stored_hash, current_password):
+                    new_hash = generate_password_hash(new_password)
+                    # Actualizamos con la nueva contraseña cifrada
+                    supabase.table('Doctores').update({'password_hash': new_hash}).eq('id', user_id).execute()
+                    success = "¡Contraseña actualizada con éxito!"
+                else:
+                    error = "La contraseña actual es incorrecta."
+            else:
+                error = "Usuario no encontrado."
+        except Exception as e:
+            error = f"Ocurrió un error al actualizar: {e}"
+            
+    return render_template('change_password.html', error=error, success=success)
+
 @app.route('/logout')
 def logout():
     # Debe limpiar 'usuario_web'
