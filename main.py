@@ -217,7 +217,7 @@ def reset_with_token(token):
 def index():
     if 'user_id' not in session:
         return redirect(url_for('login'))
-    
+        
     user_id = session['user_id']
     calendar_id = session.get('calendar_id')
     
@@ -225,24 +225,28 @@ def index():
         # 1. Obtener la información del perfil del profesional
         response = supabase.table('Doctores').select('*').eq('id', user_id).execute()
         user_data = response.data[0] if response.data else {}
-        
-        # 2. Consultar las métricas de la tabla 'citas_procesadas'
-        # Nota: Si tu tabla 'citas_procesadas' se relaciona por correo usa 'calendar_id', 
-        # o cámbialo a 'doctor_id' / 'id' según la columna que use para identificar al profesional.
-        res_citas = supabase.table('citas_procesadas').select('*', count='exact').eq('calendar_id', calendar_id).execute()
-        
-        citas_count = res_citas.count if hasattr(res_citas, 'count') and res_citas.count is not None else (len(res_citas.data) if res_citas.data else 0)
+
+        # 2. Consultar las citas de la tabla 'citas_procesadas' usando calendar_id
+        res_citas = supabase.table('citas_procesadas').select('*').eq('calendar_id', calendar_id).execute()
+        citas = res_citas.data if res_citas.data else []
         
     except Exception as e:
         print(f"Error al cargar métricas del panel: {e}")
         user_data = {}
-        citas_count = 0
-    
-    # Estructuramos el diccionario 'datos' que espera tu dashboard.html
+        citas = []
+
+    # 3. Calcular los totales según el estado en la tabla 'citas_procesadas'
+    total_enviadas = len(citas)
+    total_confirmadas = sum(1 for c in citas if c.get('estado') in ['confirmada', 'Confirmada'])
+    total_canceladas = sum(1 for c in citas if c.get('estado') in ['cancelada', 'reagendar', 'Cancelada'])
+
+    # 4. Estructuramos el diccionario 'datos' para tu dashboard.html
     datos = {
-        'citas_enviadas': citas_count
+        'citas_enviadas': total_enviadas,
+        'confirmadas': total_confirmadas,
+        'canceladas': total_canceladas
     }
-    
+
     return render_template('dashboard.html', user=user_data, datos=datos)
 
 @app.route('/login', methods=['GET', 'POST'])
