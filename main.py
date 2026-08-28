@@ -121,7 +121,7 @@ def register():
                     'id': str(uuid.uuid4()),
                     'calendar_id': email,
                     'password_hash': hashed_password,
-                    'ocupacion': ocupacion,
+                    'ocupation': ocupacion,
                     'wa_link': wa_link
                     # Si tu tabla también tiene una columna 'name' o 'nombre', agrégala aquí:
                     # 'name': nombre 
