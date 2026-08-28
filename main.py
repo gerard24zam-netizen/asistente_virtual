@@ -164,7 +164,7 @@ def index():
     user_id = session['user_id']
     
     # Puedes renderizar tu plantilla de inicio/panel aquí (ej. index.html o dashboard.html)
-    return render_template('index.html', user_id=user_id)
+    return render_template('dashboad.html', user_id=user_id)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
