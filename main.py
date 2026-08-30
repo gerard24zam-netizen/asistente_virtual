@@ -174,14 +174,19 @@ def oauth2callback():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     error = None
-    success = None
     if request.method == 'POST':
-        usuario = request.form.get('usuario').strip().lower()
-        nombre = request.form.get('nombre')
-        ocupacion = request.form.get('ocupacion')
-        telefono = request.form.get('telefono')
-        email = request.form.get('email')
-        password = request.form.get('password')
+        usuario = request.form.get('usuario', '').strip().lower()
+        nombre = request.form.get('nombre', '').strip()
+        ocupacion = request.form.get('ocupacion', '').strip()
+        telefono = request.form.get('telefono', '').strip()
+        email = request.form.get('email', '').strip()
+        password = request.form.get('password', '')
+        
+        # Validación de términos y condiciones
+        terminos = request.form.get('terminos')
+        if not terminos:
+            error = "Debes aceptar los términos y condiciones para continuar."
+            return render_template('register.html', error=error)
         
         try:
             existing_id = supabase.table('Doctores').select('*').eq('id', usuario).execute()
@@ -204,17 +209,29 @@ def register():
             supabase.table('Doctores').insert({
                 'id': usuario,
                 'calendar_id': email,
+                'name': nombre,
                 'password_hash': hashed_password,
                 'ocupation': ocupacion,
                 'wa_link': wa_link
             }).execute()
             
-            success = "¡Cuenta creada exitosamente!"
+            # Autenticación automática temporal en sesión y redirección al onboarding de Google Calendar
+            session['user_id'] = usuario
+            session['calendar_id'] = email
+            
+            return redirect(url_for('onboarding'))
+            
         except Exception as e:
             print(f"Error al registrar usuario: {e}")
             error = "Ocurrió un error interno al procesar el registro."
             
-    return render_template('register.html', error=error, success=success)
+    return render_template('register.html', error=error)
+
+@app.route('/onboarding')
+def onboarding():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    return render_template('onboarding.html')
 
 @app.route('/forgot-password', methods=['GET', 'POST'])
 def forgot_password():
