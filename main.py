@@ -131,7 +131,7 @@ def oauth2callback():
         return redirect(url_for('login'))
         
     state = session.get('oauth_state')
-    code_verifier = session.get('code_verifier')  # <--- Recupera el verificador
+    code_verifier = session.get('code_verifier')
     
     client_config = {
         "web": {
@@ -150,12 +150,22 @@ def oauth2callback():
         redirect_uri=url_for('oauth2callback', _external=True)
     )
     
-    flow.code_verifier = code_verifier  # <--- Restáuralo aquí
+    flow.code_verifier = code_verifier
     flow.fetch_token(authorization_response=request.url)
     
     creds = flow.credentials
+    user_id = session.get('user_id')  # El ID personalizado del usuario en sesión
     
-    # ... resto de tu código para guardar el token en Supabase ...
+    try:
+        # Guardamos el JSON de las credenciales en la columna google_token_json filtrando por su id
+        supabase.table("Doctores").update({
+            "google_token_json": creds.to_json()
+        }).eq("id", user_id).execute()
+    except Exception as e:
+        print(f"Error al guardar el token en Supabase: {e}")
+        
+    return redirect(url_for('dashboard'))
+    
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     error = None
