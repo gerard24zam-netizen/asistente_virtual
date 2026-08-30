@@ -122,6 +122,7 @@ def authorize():
     )
     
     session['oauth_state'] = state
+    session['code_verifier'] = flow.code_verifier  # <--- Guarda esto en la sesión
     return redirect(authorization_url)
 
 @app.route('/oauth2callback')
@@ -130,6 +131,7 @@ def oauth2callback():
         return redirect(url_for('login'))
         
     state = session.get('oauth_state')
+    code_verifier = session.get('code_verifier')  # <--- Recupera el verificador
     
     client_config = {
         "web": {
@@ -148,29 +150,12 @@ def oauth2callback():
         redirect_uri=url_for('oauth2callback', _external=True)
     )
     
+    flow.code_verifier = code_verifier  # <--- Restáuralo aquí
     flow.fetch_token(authorization_response=request.url)
+    
     creds = flow.credentials
     
-    token_info = {
-        'token': creds.token,
-        'refresh_token': creds.refresh_token,
-        'token_uri': creds.token_uri,
-        'client_id': creds.client_id,
-        'client_secret': creds.client_secret,
-        'scopes': creds.scopes
-    }
-    
-    user_id = session['user_id']
-    try:
-        supabase.table("Doctores").update({
-            "google_token_json": json.dumps(token_info)
-        }).eq("id", user_id).execute()
-        log(f"Token OAuth guardado exitosamente para el usuario {user_id}")
-    except Exception as e:
-        log(f"Error guardando token OAuth en Supabase: {e}")
-        
-    return redirect(url_for('index'))
-
+    # ... resto de tu código para guardar el token en Supabase ...
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     error = None
