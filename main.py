@@ -16,7 +16,6 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import URLSafeTimedSerializer as Serializer
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from itsdangerous import URLSafeTimedSerializer as Serializer
 
 app = Flask(__name__)
 
@@ -26,12 +25,10 @@ META_TOKEN = "EAAXdEhil3gMBR0uiujuuAvK5nqaj8A9boQQ7Yd59u0Xa8GF86XVtJl2k7EWLecDPk
 VERIFY_TOKEN = "TOKEN_SECRETO_META"
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
-app = Flask(__name__)
 app.secret_key = 'tu_clave_secreta'  # Necesario para que funcione session
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
-# Configuras Resend
 resend.api_key = os.environ.get("RESEND_API_KEY")
 
 def get_serializer():
@@ -103,7 +100,7 @@ def register():
     error = None
     success = None
     if request.method == 'POST':
-        usuario = request.form.get('usuario').strip().lower() # Normalizamos a minúsculas sin espacios
+        usuario = request.form.get('usuario').strip().lower()
         nombre = request.form.get('nombre')
         ocupacion = request.form.get('ocupacion')
         telefono = request.form.get('telefono')
@@ -111,19 +108,16 @@ def register():
         password = request.form.get('password')
         
         try:
-            # 1. Validar si el nombre de usuario (ID) ya existe
             existing_id = supabase.table('Doctores').select('*').eq('id', usuario).execute()
             if existing_id.data and len(existing_id.data) > 0:
                 error = "El nombre de usuario ya está en uso. Por favor elige otro."
                 return render_template('register.html', error=error)
             
-            # 2. Validar si el correo ya está registrado
             existing_email = supabase.table('Doctores').select('*').eq('calendar_id', email).execute()
             if existing_email.data and len(existing_email.data) > 0:
                 error = "Este correo electrónico ya se encuentra registrado en el sistema."
                 return render_template('register.html', error=error)
             
-            # Limpiar el teléfono y generar el enlace de WhatsApp
             telefono_limpio = re.sub(r'\D', '', telefono)
             if len(telefono_limpio) == 10:
                 telefono_limpio = '52' + telefono_limpio
@@ -131,7 +125,6 @@ def register():
             
             hashed_password = generate_password_hash(password)
             
-            # Inserción usando el ID personalizado que eligió el usuario
             supabase.table('Doctores').insert({
                 'id': usuario,
                 'calendar_id': email,
@@ -194,7 +187,6 @@ def forgot_password():
 def reset_with_token(token):
     s = get_serializer()
     try:
-        # El token expira en 900 segundos (15 minutos)
         user_id = s.loads(token, salt='password-reset-salt', max_age=900)
     except Exception:
         return "El enlace de recuperación es inválido o ya ha expirado.", 400
@@ -222,11 +214,9 @@ def index():
     calendar_id = session.get('calendar_id')
     
     try:
-        # 1. Obtener la información del perfil del profesional
         response = supabase.table('Doctores').select('*').eq('id', user_id).execute()
         user_data = response.data[0] if response.data else {}
 
-        # 2. Consultar las citas de la tabla 'citas_procesadas' usando calendar_id
         res_citas = supabase.table('citas_procesadas').select('*').eq('calendar_id', calendar_id).execute()
         citas = res_citas.data if res_citas.data else []
         
@@ -235,13 +225,10 @@ def index():
         user_data = {}
         citas = []
 
-    # 3. Calcular los totales usando las claves exactas que pide el dashboard
     total_enviadas = len(citas)
-    total_confirmadas = sum(1 for c in citas if c.get('estado') in ['confirmada', 'Confirmada'])
-    total_canceladas = sum(1 for c in citas if c.get('estado') in ['cancelada', 'reagendar', 'Cancelada'])
+    total_confirmadas = sum(1 for c in citas if c.get('estado') in ['confirmada', 'Confirmada', 'confirmado'])
+    total_canceladas = sum(1 for c in citas if c.get('estado') in ['cancelada', 'reagendar', 'Cancelada', 'cancelado'])
 
-    # 4. Calcular el promedio de satisfacción real en escala de 1 a 10
-    # Extraemos los valores de calificación (asegúrate de que en tu tabla el campo se llame 'calificacion' o 'satisfaccion')
     calificaciones = [float(c.get('calificacion')) for c in citas if c.get('calificacion') is not None]
     total_encuestas = len(calificaciones)
     
@@ -271,21 +258,18 @@ def login():
         try:
             user_data = None
             
-            # 1. Intentar buscar por el ID de usuario personalizado
             res_id = supabase.table('Doctores').select('*').eq('id', login_input).execute()
             if res_id.data and len(res_id.data) > 0:
                 user_data = res_id.data[0]
             else:
-                # 2. Si no existe, intentar buscar por correo electrónico (calendar_id)
                 res_email = supabase.table('Doctores').select('*').eq('calendar_id', login_input).execute()
                 if res_email.data and len(res_email.data) > 0:
                     user_data = res_email.data[0]
             
-            # Verificar si se encontró el usuario y la contraseña coincide
             if user_data and check_password_hash(user_data['password_hash'], password):
                 session['user_id'] = user_data['id']
                 session['calendar_id'] = user_data['calendar_id']
-                return redirect(url_for('index')) # O la ruta principal de tu panel
+                return redirect(url_for('index'))
             else:
                 error = "Usuario/Correo o contraseña incorrectos."
         except Exception as e:
@@ -299,7 +283,6 @@ def dashboard():
     if 'usuario_web' not in session:
         return redirect(url_for('login'))
     
-    # Obtenemos el correo del doctor logueado actualmente
     doctor_actual = session['usuario_web']
     
     total_enviadas = 0
@@ -309,18 +292,16 @@ def dashboard():
     cantidad_encuestas = 0
 
     try:
-        mes_actual = datetime.now().strftime('%Y-%m')
+        mes_actual = datetime.datetime.now().strftime('%Y-%m')
 
-        # 1. Consultamos citas procesadas SÓLO de este doctor
         response_uso = supabase.table('citas_procesadas').select('*').eq('calendar_id', doctor_actual).execute()
         
         if response_uso.data:
             registros_mes = [r for r in response_uso.data if r.get('fecha', '').startswith(mes_actual)]
             total_enviadas = len(registros_mes)
-            confirmadas = sum(1 for r in registros_mes if r.get('estado') == 'confirmado')
-            canceladas = sum(1 for r in registros_mes if r.get('estado') in ['cancelado', 'reagendar'])
+            confirmadas = sum(1 for r in registros_mes if r.get('estado') in ['confirmada', 'confirmado'])
+            canceladas = sum(1 for r in registros_mes if r.get('estado') in ['cancelado', 'cancelada', 'reagendar'])
 
-        # 2. Consultamos encuestas SÓLO de este doctor
         response_encuestas = supabase.table('encuestas').select('calificacion, fecha').eq('calendar_id', doctor_actual).execute()
         if response_encuestas.data:
             encuestas_mes = [r for r in response_encuestas.data if r.get('fecha', '').startswith(mes_actual)]
@@ -357,15 +338,12 @@ def change_password():
         user_id = session['user_id']
         
         try:
-            # Consultamos el hash actual en la base de datos
             res = supabase.table('Doctores').select('password_hash').eq('id', user_id).execute()
             if res.data:
                 stored_hash = res.data[0].get('password_hash')
                 
-                # Verificamos que la contraseña actual sea correcta
                 if stored_hash and check_password_hash(stored_hash, current_password):
                     new_hash = generate_password_hash(new_password)
-                    # Actualizamos con la nueva contraseña cifrada
                     supabase.table('Doctores').update({'password_hash': new_hash}).eq('id', user_id).execute()
                     success = "¡Contraseña actualizada con éxito!"
                 else:
@@ -379,8 +357,9 @@ def change_password():
 
 @app.route('/logout')
 def logout():
-    # Debe limpiar 'usuario_web'
     session.pop('usuario_web', None)
+    session.pop('user_id', None)
+    session.pop('calendar_id', None)
     return redirect(url_for('login'))
 
 @app.route('/toggle-encuestas', methods=['POST'])
@@ -391,14 +370,11 @@ def toggle_encuestas():
     user_id = session['user_id']
     
     try:
-        # Consultamos el estado actual usando la columna 'enviar_encuesta'
         res = supabase.table('Doctores').select('enviar_encuesta').eq('id', user_id).execute()
         current_status = res.data[0].get('enviar_encuesta', False) if res.data else False
         
-        # Invertimos el valor (de false a true o de true a false)
         new_status = not current_status
         
-        # Actualizamos en Supabase
         supabase.table('Doctores').update({'enviar_encuesta': new_status}).eq('id', user_id).execute()
         
     except Exception as e:
@@ -440,7 +416,6 @@ def procesar_desde_supabase():
     for doc in doctores:
         doc_nombre = doc.get("name") or doc.get("nombre") or "Dr. Gerardo"
 
-        # --- VALIDACIÓN 1: Días de trabajo configurados y Excepciones de fin de semana ---
         dias_configurados = doc.get("dias_trabajo") or "Lunes,Martes,Miercoles,Jueves,Viernes"
         trabajar_fechas_str = doc.get("trabajar_fecha") or ""
         
@@ -448,13 +423,10 @@ def procesar_desde_supabase():
         es_fecha_excepcion = fecha_hoy in [f.strip() for f in trabajar_fechas_str.split(",") if f.strip()]
 
         if not es_dia_laboral_normal and not es_fecha_excepcion:
-            log(f"Hoy es {dia_actual_espanol} ({fecha_hoy}), día no laboral y sin excepciones para {doc_nombre}. Saltando ejecución.")
             continue
 
-        # --- VALIDACIÓN 2: Pausa activa (Vacaciones o fin de semana largo) ---
         pausa_hasta = doc.get("pausa_hasta")
         if pausa_hasta and fecha_hoy <= pausa_hasta:
-            log(f"El doctor {doc_nombre} se encuentra en pausa hasta {pausa_hasta}. Saltando ejecución.")
             continue
 
         cal_id = doc.get("calendar_id") or doc.get("email")
@@ -465,7 +437,6 @@ def procesar_desde_supabase():
         wa_link = doc.get("wa_link") or doc.get("link") or ""
         tel_doc = "".join(filter(str.isdigit, str(wa_link)))
 
-        # Si ejecutó por excepción de fin de semana, limpiamos esa fecha ya procesada
         if es_fecha_excepcion and not es_dia_laboral_normal:
             fechas_pendientes = [f.strip() for f in trabajar_fechas_str.split(",") if f.strip() and f.strip() != fecha_hoy]
             nueva_fechas_str = ",".join(fechas_pendientes) if fechas_pendientes else None
@@ -480,7 +451,6 @@ def procesar_desde_supabase():
             log(f"Error leyendo calendario {cal_id}: {e}")
             continue
 
-        # 1. Enviar plantilla jornada_doc solo si NO se ha enviado hoy
         jornada_registrada = doc.get("jornada_fecha")
         if tel_doc and jornada_registrada != fecha_hoy:
             total_citas_doc = len(eventos)
@@ -490,15 +460,11 @@ def procesar_desde_supabase():
             ]
             resp_doc = enviar_mensaje(tel_doc, "template", template_params=params_jornada_doc, template_name="jornada_doc")
             if resp_doc and resp_doc.status_code < 400:
-                log(f"Plantilla jornada_doc enviada al doctor {doc_nombre}")
                 try:
                     supabase.table("Doctores").update({"jornada_fecha": fecha_hoy}).eq("calendar_id", cal_id).execute()
                 except Exception as ex:
                     log(f"No se pudo guardar jornada_fecha en Supabase: {ex}")
-        else:
-            log(f"La plantilla jornada_doc ya había sido enviada hoy al doctor {doc_nombre}")
 
-        # --- CALCULAR REPORTE DE ENCUESTAS DEL DÍA ANTERIOR Y ENVIAR AL DOCTOR ---
         ayer_str = str((ahora - datetime.timedelta(days=1)).date())
         promedio_str = "Sin calificaciones aún"
         total_respuestas = 0
@@ -527,7 +493,6 @@ def procesar_desde_supabase():
             )
             enviar_mensaje(tel_doc, "text", contenido=mensaje_balance)
 
-        # 2. Procesar y enviar recordatorios a los pacientes (Lógica intacta)
         for evento in eventos:
             titulo = evento.get('summary', '')
             descripcion = evento.get('description', '')
@@ -564,6 +529,18 @@ def procesar_desde_supabase():
                     total_enviados += 1
                     log(f"Recordatorio enviado a paciente {telefono_paciente}")
 
+                    # --- INTEGRACIÓN: Registrar cita enviada en citas_procesadas ---
+                    if supabase:
+                        try:
+                            supabase.table("citas_procesadas").insert({
+                                "calendar_id": cal_id,
+                                "telefono_client": telefono_paciente,
+                                "estado": "enviada",
+                                "fecha": start_dt if start_dt else str(datetime.datetime.now())
+                            }).execute()
+                        except Exception as ex:
+                            log(f"Error guardando cita procesada en Supabase: {ex}")
+
     return jsonify({"status": "ok", "enviados": total_enviados}), 200
 
 @app.route('/ejecutar-encuesta-nocturna', methods=['POST'])
@@ -572,7 +549,6 @@ def ejecutar_encuesta_nocturna():
         return jsonify({"error": "Falta configuración de Supabase o Google Calendar"}), 500
 
     try:
-        # 1. Obtener de Supabase los doctores que tienen activada la encuesta
         response = supabase.table("Doctores").select("*").eq("enviar_encuesta", True).execute()
         doctores_activos = response.data if response.data else []
 
@@ -600,7 +576,6 @@ def ejecutar_encuesta_nocturna():
             for evento in eventos:
                 titulo = evento.get('summary', '')
                 
-                # --- NUEVO FILTRO: Solo enviar si la cita fue confirmada (contiene ✅) ---
                 if "✅" not in titulo:
                     continue
                 
@@ -612,7 +587,6 @@ def ejecutar_encuesta_nocturna():
                     telefono_paciente = "52" + digitos[-10:]
                     nombre_paciente = extraer_nombre_limpio(titulo)
                     
-                    # Mensaje de encuesta
                     mensaje_encuesta = (
                         f"Hola *{nombre_paciente}*, de parte de *{doc_nombre}* esperamos que tu cita de hoy haya sido excelente. "
                         f"¿Qué tan satisfecho(a) te sientes con la atención recibida del 1 al 10? "
@@ -620,7 +594,6 @@ def ejecutar_encuesta_nocturna():
                     )
                     
                     enviar_mensaje(telefono_paciente, "text", contenido=mensaje_encuesta)
-                    log(f"Encuesta nocturna enviada a paciente confirmado {telefono_paciente}")
 
         return jsonify({"status": "success", "message": "Encuestas nocturnas enviadas correctamente a citas confirmadas."}), 200
 
@@ -692,7 +665,6 @@ def procesar_webhook_asincrono(data):
             
             log(f"Mensaje recibido de {telefono_cliente}: {texto}")
 
-            # 1. Verificar si el mensaje viene de un DOCTOR registrado
             doc_encontrado = buscar_doctor_por_telefono(telefono_cliente)
             if doc_encontrado:
                 doc_nombre = doc_encontrado.get("name") or doc_encontrado.get("nombre") or "Doctor"
@@ -802,15 +774,23 @@ def procesar_webhook_asincrono(data):
                     enviar_mensaje(telefono_cliente, "text", contenido=resp_doc)
                     return
 
-            # 2. Si no es doctor, procesar como PACIENTE (Lógica intacta)
+            # Procesar como PACIENTE
             if any(k in texto for k in ["si", "sí", "confirmo", "confirmar"]):
                 doc, nombre_paciente = marcar_evento_calendario(telefono_cliente, 'confirmar')
                 if doc:
                     doc_nombre = doc.get("name") or doc.get("nombre") or "Doctor"
+                    doc_cal_id = doc.get("calendar_id") or doc.get("email")
                     wa_link = doc.get("wa_link") or doc.get("link") or ""
                     respuesta_texto = f"*¡Perfecto!* Se ha confirmado tu cita de hoy con {doc_nombre}. Dudas o aclaraciones, comunícate aquí: {wa_link}.\n *nota: Recuerda preparate para epoca de lluvias*\n *¡Que tenga un excelente día!*"
                     enviar_mensaje(telefono_cliente, "text", contenido=respuesta_texto)
                     
+                    # --- INTEGRACIÓN: Actualizar estado a 'confirmada' en Supabase ---
+                    if supabase and doc_cal_id:
+                        try:
+                            supabase.table("citas_procesadas").update({"estado": "confirmada"}).eq("calendar_id", doc_cal_id).eq("telefono_client", telefono_cliente).execute()
+                        except Exception as ex:
+                            log(f"Error actualizando estado 'confirmada' en Supabase: {ex}")
+
                     tel_doc = "".join(filter(str.isdigit, str(wa_link)))
                     if tel_doc:
                         enviar_mensaje(tel_doc, "text", contenido=f"✅ El paciente *{nombre_paciente}* ha confirmado su cita de hoy.")
@@ -819,15 +799,22 @@ def procesar_webhook_asincrono(data):
                 doc, nombre_paciente = marcar_evento_calendario(telefono_cliente, 'reagendar')
                 if doc:
                     doc_nombre = doc.get("name") or doc.get("nombre") or "Doctor"
+                    doc_cal_id = doc.get("calendar_id") or doc.get("email")
                     wa_link = doc.get("wa_link") or doc.get("link") or ""
                     respuesta_texto = f"*Se ha cancelado tu cita.* Para reagendar, por favor comunícate con *{doc_nombre}*.\n *Da clic en el link de Whatsapp* aquí: {wa_link} con gusto atenderemos tu solicitud.\n *¡Que tenga un excelente día!*"
                     enviar_mensaje(telefono_cliente, "text", contenido=respuesta_texto)
                     
+                    # --- INTEGRACIÓN: Actualizar estado a 'reagendar' en Supabase ---
+                    if supabase and doc_cal_id:
+                        try:
+                            supabase.table("citas_procesadas").update({"estado": "reagendar"}).eq("calendar_id", doc_cal_id).eq("telefono_client", telefono_cliente).execute()
+                        except Exception as ex:
+                            log(f"Error actualizando estado 'reagendar' en Supabase: {ex}")
+
                     tel_doc = "".join(filter(str.isdigit, str(wa_link)))
                     if tel_doc:
                         enviar_mensaje(tel_doc, "text", contenido=f"❌ El paciente *{nombre_paciente}* indicó que necesita reagendar su cita de hoy.\n *IMPORTANTE* comunicarte con él, para que no pierda su cita.")
 
-            # 3. Detectar si el mensaje es una calificación de encuesta (número del 1 al 10)
             else:
                 match_calificacion = re.search(r'\b([1-9]|10)\b', texto)
                 if match_calificacion and not any(k in texto for k in ["si", "sí", "no", "confirmo", "cancelar", "reagendar"]):
@@ -866,7 +853,6 @@ def procesar_webhook_asincrono(data):
                                 "calificacion": calificacion_num,
                                 "comentario": comentario_texto
                             }).execute()
-                            log(f"Encuesta guardada con éxito para el doctor {cal_id_encontrado}")
                         except Exception as ex:
                             log(f"Error insertando encuesta en Supabase: {ex}")
 
