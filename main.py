@@ -6,16 +6,14 @@ import datetime
 import pytz
 import threading
 import uuid
-import smtplib
 import resend
 from flask import Flask, request, jsonify, render_template, redirect, url_for, session
-from google.oauth2 import service_account
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from supabase import create_client
 from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import URLSafeTimedSerializer as Serializer
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
 app = Flask(__name__)
 
@@ -25,11 +23,14 @@ META_TOKEN = "EAAXdEhil3gMBR0uiujuuAvK5nqaj8A9boQQ7Yd59u0Xa8GF86XVtJl2k7EWLecDPk
 VERIFY_TOKEN = "TOKEN_SECRETO_META"
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
-app.secret_key = 'tu_clave_secreta'  # Necesario para que funcione session
+app.secret_key = 'tu_clave_secreta'
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 resend.api_key = os.environ.get("RESEND_API_KEY")
+
+# Permitir HTTP local para pruebas si es necesario (quitar en producción estricta con HTTPS)
+# os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 def get_serializer():
     return Serializer(app.secret_key)
@@ -37,19 +38,16 @@ def get_serializer():
 def log(msg):
     print(f"DEBUG: {msg}", flush=True)
 
-def obtener_servicio_calendar():
+def obtener_servicio_calendar_por_doctor(calendar_id):
     try:
-        creds_json = os.environ.get('GOOGLE_TOKEN_JSON')
-        if not creds_json:
-            return None
-        info = json.loads(creds_json)
-        creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
-        return build('calendar', 'v3', credentials=creds)
+        res = supabase.table("Doctores").select("google_token_json").eq("calendar_id", calendar_id).execute()
+        if res.data and res.data[0].get("google_token_json"):
+            token_info = json.loads(res.data[0].get("google_token_json"))
+            creds = Credentials.from_authorized_user_info(token_info, SCOPES)
+            return build('calendar', 'v3', credentials=creds)
     except Exception as e:
-        log(f"Error calendar: {e}")
-        return None
-
-calendario = obtener_servicio_calendar()
+        log(f"Error cargando calendario OAuth para {calendar_id}: {e}")
+    return None
 
 def limpiar_telefono(tel):
     return "".join(filter(str.isdigit, str(tel)))[-10:]
@@ -94,6 +92,84 @@ def buscar_doctor_por_telefono(telefono_recibido):
     except Exception as e:
         log(f"Error buscando doctor por teléfono: {e}")
     return None
+
+# --- RUTAS DE GOOGLE OAUTH ---
+@app.route('/authorize')
+def authorize():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    client_config = {
+        "web": {
+            "client_id": os.environ.get("GOOGLE_CLIENT_ID"),
+            "client_secret": os.environ.get("GOOGLE_CLIENT_SECRET"),
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "redirect_uris": [url_for('oauth2callback', _external=True)]
+        }
+    }
+    
+    flow = Flow.from_client_config(
+        client_config,
+        scopes=SCOPES,
+        redirect_uri=url_for('oauth2callback', _external=True)
+    )
+    
+    authorization_url, state = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true',
+        prompt='consent'
+    )
+    
+    session['oauth_state'] = state
+    return redirect(authorization_url)
+
+@app.route('/oauth2callback')
+def oauth2callback():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+        
+    state = session.get('oauth_state')
+    
+    client_config = {
+        "web": {
+            "client_id": os.environ.get("GOOGLE_CLIENT_ID"),
+            "client_secret": os.environ.get("GOOGLE_CLIENT_SECRET"),
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "redirect_uris": [url_for('oauth2callback', _external=True)]
+        }
+    }
+    
+    flow = Flow.from_client_config(
+        client_config,
+        scopes=SCOPES,
+        state=state,
+        redirect_uri=url_for('oauth2callback', _external=True)
+    )
+    
+    flow.fetch_token(authorization_response=request.url)
+    creds = flow.credentials
+    
+    token_info = {
+        'token': creds.token,
+        'refresh_token': creds.refresh_token,
+        'token_uri': creds.token_uri,
+        'client_id': creds.client_id,
+        'client_secret': creds.client_secret,
+        'scopes': creds.scopes
+    }
+    
+    user_id = session['user_id']
+    try:
+        supabase.table("Doctores").update({
+            "google_token_json": json.dumps(token_info)
+        }).eq("id", user_id).execute()
+        log(f"Token OAuth guardado exitosamente para el usuario {user_id}")
+    except Exception as e:
+        log(f"Error guardando token OAuth en Supabase: {e}")
+        
+    return redirect(url_for('index'))
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -280,10 +356,11 @@ def login():
 
 @app.route('/dashboard')
 def dashboard():
-    if 'usuario_web' not in session:
+    if 'usuario_web' not in session and 'user_id' not in session:
         return redirect(url_for('login'))
     
-    doctor_actual = session['usuario_web']
+    doctor_actual = session.get('user_id') or session.get('usuario_web')
+    calendar_id = session.get('calendar_id')
     
     total_enviadas = 0
     confirmadas = 0
@@ -294,7 +371,7 @@ def dashboard():
     try:
         mes_actual = datetime.datetime.now().strftime('%Y-%m')
 
-        response_uso = supabase.table('citas_procesadas').select('*').eq('calendar_id', doctor_actual).execute()
+        response_uso = supabase.table('citas_procesadas').select('*').eq('calendar_id', calendar_id).execute()
         
         if response_uso.data:
             registros_mes = [r for r in response_uso.data if r.get('fecha', '').startswith(mes_actual)]
@@ -302,7 +379,7 @@ def dashboard():
             confirmadas = sum(1 for r in registros_mes if r.get('estado') in ['confirmada', 'confirmado'])
             canceladas = sum(1 for r in registros_mes if r.get('estado') in ['cancelado', 'cancelada', 'reagendar'])
 
-        response_encuestas = supabase.table('encuestas').select('calificacion, fecha').eq('calendar_id', doctor_actual).execute()
+        response_encuestas = supabase.table('encuestas').select('calificacion, fecha').eq('calendar_id', calendar_id).execute()
         if response_encuestas.data:
             encuestas_mes = [r for r in response_encuestas.data if r.get('fecha', '').startswith(mes_actual)]
             
@@ -388,8 +465,8 @@ def home():
 
 @app.route('/ejecutar-proceso-diario', methods=['POST'])
 def procesar_desde_supabase():
-    if not supabase or not calendario:
-        return jsonify({"error": "Falta configuración de Supabase o Google Calendar"}), 500
+    if not supabase:
+        return jsonify({"error": "Falta configuración de Supabase"}), 500
 
     try:
         response = supabase.table("Doctores").select("*").execute()
@@ -415,6 +492,14 @@ def procesar_desde_supabase():
 
     for doc in doctores:
         doc_nombre = doc.get("name") or doc.get("nombre") or "Dr. Gerardo"
+        cal_id = doc.get("calendar_id") or doc.get("email")
+        if not cal_id:
+            continue
+
+        calendario = obtener_servicio_calendar_por_doctor(cal_id)
+        if not calendario:
+            log(f"No se pudo inicializar calendario para {cal_id}")
+            continue
 
         dias_configurados = doc.get("dias_trabajo") or "Lunes,Martes,Miercoles,Jueves,Viernes"
         trabajar_fechas_str = doc.get("trabajar_fecha") or ""
@@ -427,10 +512,6 @@ def procesar_desde_supabase():
 
         pausa_hasta = doc.get("pausa_hasta")
         if pausa_hasta and fecha_hoy <= pausa_hasta:
-            continue
-
-        cal_id = doc.get("calendar_id") or doc.get("email")
-        if not cal_id:
             continue
 
         doc_ocupacion = doc.get("ocupation") or "Atención Psicológica"
@@ -529,7 +610,6 @@ def procesar_desde_supabase():
                     total_enviados += 1
                     log(f"Recordatorio enviado a paciente {telefono_paciente}")
 
-                    # --- INTEGRACIÓN: Registrar cita enviada en citas_procesadas ---
                     if supabase:
                         try:
                             supabase.table("citas_procesadas").insert({
@@ -545,8 +625,8 @@ def procesar_desde_supabase():
 
 @app.route('/ejecutar-encuesta-nocturna', methods=['POST'])
 def ejecutar_encuesta_nocturna():
-    if not supabase or not calendario:
-        return jsonify({"error": "Falta configuración de Supabase o Google Calendar"}), 500
+    if not supabase:
+        return jsonify({"error": "Falta configuración de Supabase"}), 500
 
     try:
         response = supabase.table("Doctores").select("*").eq("enviar_encuesta", True).execute()
@@ -565,6 +645,10 @@ def ejecutar_encuesta_nocturna():
             doc_nombre = doc.get("name") or doc.get("nombre") or "Doctor"
             
             if not cal_id:
+                continue
+
+            calendario = obtener_servicio_calendar_por_doctor(cal_id)
+            if not calendario:
                 continue
             
             try:
@@ -603,14 +687,14 @@ def ejecutar_encuesta_nocturna():
 
 def marcar_evento_calendario(telefono_recibido, accion):
     tel_buscado = limpiar_telefono(telefono_recibido)
-    if not supabase or not calendario:
+    if not supabase:
         return None, None
     
     try:
         response = supabase.table("Doctores").select("*").execute()
         doctores = response.data if response.data else []
     except:
-        doctores = [{"calendar_id": "gerard24zam@gmail.com", "nombre": "Dr. Gerardo", "wa_link": "https://wa.me/527226293417"}]
+        doctores = []
 
     zona_mexico = pytz.timezone('America/Mexico_City')
     ahora_mexico = datetime.datetime.now(zona_mexico)
@@ -623,6 +707,11 @@ def marcar_evento_calendario(telefono_recibido, accion):
         cal_id = doc.get("calendar_id") or doc.get("email")
         if not cal_id:
             continue
+        
+        calendario = obtener_servicio_calendar_por_doctor(cal_id)
+        if not calendario:
+            continue
+
         try:
             eventos_result = calendario.events().list(calendarId=cal_id, timeMin=inicio, timeMax=fin, singleEvents=True).execute()
             for evento in eventos_result.get('items', []):
@@ -671,7 +760,7 @@ def procesar_webhook_asincrono(data):
                 doc_cal_id = doc_encontrado.get("calendar_id")
 
                 if any(k in texto for k in ["empecemos"]):
-                    resp_doc = '¡Perfecto! es un buen momento para empezar el día, "Stein tu Asistente Virtual" *activado*. \n *nota: Recuerda preparate para epoca de lluvias'
+                    resp_doc = '¡Perfecto! es un buen momento para empezar el día, "Stein tu Asistente Virtual" *activado*. \n *nota: Recuerda preparate para epoca de lluvias*'
                     enviar_mensaje(telefono_cliente, "text", contenido=resp_doc)
                     return
 
@@ -728,152 +817,39 @@ def procesar_webhook_asincrono(data):
                     resp_doc = f"Entendido Dr. {doc_nombre}, he habilitado la agenda para trabajar este domingo {domingo_date}. *Stein tu Asistente Virtual*"
                     enviar_mensaje(telefono_cliente, "text", contenido=resp_doc)
                     return
-
-                elif any(k in texto for k in ["hoy no trabajo", "no trabajo", "descanso"]):
-                    zona_mexico = pytz.timezone('America/Mexico_City')
-                    ahora = datetime.datetime.now(zona_mexico)
-                    fecha_hoy = ahora.date()
-                    
-                    fecha_pausa_fin = fecha_hoy
-                    
-                    match_fecha = re.search(r'(\d{1,2})[-/](\d{1,2})[-/](\d{4})', texto)
-                    if match_fecha:
-                        dia, mes, anio = map(int, match_fecha.groups())
-                        try:
-                            fecha_pausa_fin = datetime.date(anio, mes, dia)
-                        except ValueError:
-                            pass
-                    else:
-                        dias_semana_map = {
-                            "lunes": 0, "martes": 1, "miércoles": 2, "miercoles": 2, 
-                            "jueves": 3, "viernes": 4, "sábado": 5, "sabado": 5, "domingo": 6
-                        }
-                        for nombre_dia, dia_num in dias_semana_map.items():
-                            if nombre_dia in texto:
-                                dias_a_sumar = (dia_num - fecha_hoy.weekday() + 7) % 7
-                                if dias_a_sumar == 0:
-                                    dias_a_sumar = 7
-                                fecha_pausa_fin = fecha_hoy + datetime.timedelta(days=dias_a_sumar)
-                                break
-
-                    fecha_pausa_str = str(fecha_pausa_fin)
-                    
-                    try:
-                        supabase.table("Doctores").update({
-                            "jornada_fecha": str(fecha_hoy),
-                            "pausa_hasta": fecha_pausa_str
-                        }).eq("calendar_id", doc_cal_id).execute()
-                    except Exception as e:
-                        log(f"Error actualizando pausa en Supabase: {e}")
-
-                    if fecha_pausa_fin > fecha_hoy:
-                        resp_doc = f"Entendido Dr. {doc_nombre}, he pausado las notificaciones desde hoy hasta el {fecha_pausa_str}. Disfrute sus vacaciones o descanso. *Stein tu Asistente Virtual*"
-                    else:
-                        resp_doc = f"Siempre es bueno tomarse el día para darse un respiro, bajar el cortisol y despejar la mente, que descanse *{doc_nombre}*. Hasta mañana *Stein tu Asistente Virtual*"
-                    
-                    enviar_mensaje(telefono_cliente, "text", contenido=resp_doc)
-                    return
-
-            # Procesar como PACIENTE
-            if any(k in texto for k in ["si", "sí", "confirmo", "confirmar"]):
+            
+            if any(k in texto for k in ["sí, confirmar", "confirmar", "si"]):
                 doc, nombre_paciente = marcar_evento_calendario(telefono_cliente, 'confirmar')
                 if doc:
-                    doc_nombre = doc.get("name") or doc.get("nombre") or "Doctor"
-                    doc_cal_id = doc.get("calendar_id") or doc.get("email")
-                    wa_link = doc.get("wa_link") or doc.get("link") or ""
-                    respuesta_texto = f"*¡Perfecto!* Se ha confirmado tu cita de hoy con {doc_nombre}. Dudas o aclaraciones, comunícate aquí: {wa_link}.\n *nota: Recuerda preparate para epoca de lluvias*\n *¡Que tenga un excelente día!*"
-                    enviar_mensaje(telefono_cliente, "text", contenido=respuesta_texto)
-                    
-                    # --- INTEGRACIÓN: Actualizar estado a 'confirmada' en Supabase ---
-                    if supabase and doc_cal_id:
-                        try:
-                            supabase.table("citas_procesadas").update({"estado": "confirmada"}).eq("calendar_id", doc_cal_id).eq("telefono_client", telefono_cliente).execute()
-                        except Exception as ex:
-                            log(f"Error actualizando estado 'confirmada' en Supabase: {ex}")
-
-                    tel_doc = "".join(filter(str.isdigit, str(wa_link)))
-                    if tel_doc:
-                        enviar_mensaje(tel_doc, "text", contenido=f"✅ El paciente *{nombre_paciente}* ha confirmado su cita de hoy.")
-
-            elif any(k in texto for k in ["no", "reagendar", "cancelar"]):
-                doc, nombre_paciente = marcar_evento_calendario(telefono_cliente, 'reagendar')
+                    doc_nombre = doc.get("name") or doc.get("nombre") or "su doctor"
+                    enviar_mensaje(telefono_cliente, "text", contenido=f"¡Gracias, {nombre_paciente}! Tu cita ha quedado confirmada con {doc_nombre}. ¡Te esperamos!")
+            elif any(k in texto for k in ["no, reagendar", "cancelar", "no"]):
+                doc, nombre_paciente = marcar_evento_calendario(telefono_cliente, 'cancelar')
                 if doc:
-                    doc_nombre = doc.get("name") or doc.get("nombre") or "Doctor"
-                    doc_cal_id = doc.get("calendar_id") or doc.get("email")
-                    wa_link = doc.get("wa_link") or doc.get("link") or ""
-                    respuesta_texto = f"*Se ha cancelado tu cita.* Para reagendar, por favor comunícate con *{doc_nombre}*.\n *Da clic en el link de Whatsapp* aquí: {wa_link} con gusto atenderemos tu solicitud.\n *¡Que tenga un excelente día!*"
-                    enviar_mensaje(telefono_cliente, "text", contenido=respuesta_texto)
-                    
-                    # --- INTEGRACIÓN: Actualizar estado a 'reagendar' en Supabase ---
-                    if supabase and doc_cal_id:
-                        try:
-                            supabase.table("citas_procesadas").update({"estado": "reagendar"}).eq("calendar_id", doc_cal_id).eq("telefono_client", telefono_cliente).execute()
-                        except Exception as ex:
-                            log(f"Error actualizando estado 'reagendar' en Supabase: {ex}")
-
-                    tel_doc = "".join(filter(str.isdigit, str(wa_link)))
-                    if tel_doc:
-                        enviar_mensaje(tel_doc, "text", contenido=f"❌ El paciente *{nombre_paciente}* indicó que necesita reagendar su cita de hoy.\n *IMPORTANTE* comunicarte con él, para que no pierda su cita.")
-
+                    enviar_mensaje(telefono_cliente, "text", contenido=f"Entendido, {nombre_paciente}. Hemos marcado tu cita como cancelada/reagendar. Por favor ponte en contacto para reprogramar.")
             else:
-                match_calificacion = re.search(r'\b([1-9]|10)\b', texto)
-                if match_calificacion and not any(k in texto for k in ["si", "sí", "no", "confirmo", "cancelar", "reagendar"]):
-                    calificacion_num = int(match_calificacion.group(1))
-                    comentario_texto = texto
-
-                    cal_id_encontrado = None
-                    if supabase and calendario:
-                        try:
-                            zona_mexico = pytz.timezone('America/Mexico_City')
-                            ahora_mexico = datetime.datetime.now(zona_mexico)
-                            inicio_dia = ahora_mexico.replace(hour=0, minute=0, second=0).astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
-                            fin_dia = ahora_mexico.replace(hour=23, minute=59, second=59).astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
-                            
-                            resp_docs = supabase.table("Doctores").select("*").execute()
-                            for d in (resp_docs.data or []):
-                                c_id = d.get("calendar_id") or d.get("email")
-                                if not c_id: continue
-                                
-                                evs = calendario.events().list(calendarId=c_id, timeMin=inicio_dia, timeMax=fin_dia, singleEvents=True).execute().get('items', [])
-                                for ev in evs:
-                                    txt_evento = f"{ev.get('summary', '')} {ev.get('description', '')}"
-                                    if limpiar_telefono(telefono_cliente) in limpiar_telefono(txt_evento):
-                                        cal_id_encontrado = c_id
-                                        break
-                                if cal_id_encontrado:
-                                    break
-                        except Exception as e:
-                            log(f"Error buscando doctor para encuesta: {e}")
-
-                    if supabase and cal_id_encontrado:
-                        try:
-                            supabase.table("Encuestas").insert({
-                                "calendar_id": cal_id_encontrado,
-                                "telefono_paciente": telefono_cliente,
-                                "calificacion": calificacion_num,
-                                "comentario": comentario_texto
-                            }).execute()
-                        except Exception as ex:
-                            log(f"Error insertando encuesta en Supabase: {ex}")
-
-                    respuesta_agradecimiento = "¡Muchas gracias por tu retroalimentación! Nos ayuda a mejorar cada día. ¡Que tengas excelente semana! *Stein Asistente Virtual*"
-                    enviar_mensaje(telefono_cliente, "text", contenido=respuesta_agradecimiento)
-                    return
-
+                match_cal = re.search(r'\b([1-9]|10)\b', texto)
+                if match_cal:
+                    calificacion = int(match_cal.group(1))
+                    enviar_mensaje(telefono_cliente, "text", contenido="¡Muchas gracias por tu retroalimentación! La hemos registrado con éxito.")
+                    
     except Exception as e:
-        log(f"Error en webhook asíncrono: {e}")
+        log(f"Error procesando webhook asíncrono: {e}")
 
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
     if request.method == 'GET':
-        if request.args.get("hub.verify_token") == VERIFY_TOKEN:
-            return request.args.get("hub.challenge")
-        return "Forbidden", 403
-    
-    data = request.get_json()
-    hilo = threading.Thread(target=procesar_webhook_asincrono, args=(data,))
-    hilo.start()
-    return "OK", 200
+        mode = request.args.get('hub.mode')
+        token = request.args.get('hub.verify_token')
+        challenge = request.args.get('hub.challenge')
+        if mode and token and mode == 'subscribe' and token == VERIFY_TOKEN:
+            return challenge, 200
+        return 'Error de verificación', 403
+    elif request.method == 'POST':
+        data = request.json
+        threading.Thread(target=procesar_webhook_asincrono, args=(data,)).start()
+        return jsonify({"status": "received"}), 200
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
