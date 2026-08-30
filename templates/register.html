@@ -56,17 +56,17 @@
                 <div class="mb-3">
                     <label for="password" class="form-label small fw-bold">Contraseña</label>
                     <div class="input-group">
-                    <input type="password" class="form-control" id="password" name="password" required placeholder="••••••••">
-                    <button class="btn btn-outline-secondary" type="button" id="togglePassword">
-                    <i class="bi bi-eye" id="toggleIcon"></i>
-                    </button>
-                </div>
+                        <input type="password" class="form-control" id="password" name="password" required placeholder="••••••••">
+                        <button class="btn btn-outline-secondary" type="button" id="togglePassword">
+                            <i class="bi bi-eye" id="toggleIcon"></i>
+                        </button>
+                    </div>
     
-    <div class="progress mt-2" style="height: 6px;">
-        <div id="strengthBar" class="progress-bar" role="progressbar" style="width: 0%;"></div>
-    </div>
-    <small id="strengthText" class="text-muted d-block mt-1" style="font-size: 0.75rem;">Seguridad: Nula</small>
-</div>
+                    <div class="progress mt-2" style="height: 6px;">
+                        <div id="strengthBar" class="progress-bar" role="progressbar" style="width: 0%;"></div>
+                    </div>
+                    <small id="strengthText" class="text-muted d-block mt-1" style="font-size: 0.75rem;">Seguridad: Nula</small>
+                </div>
 
                 <div class="bg-light p-3 rounded-3 mb-3 small text-muted">
                     <p class="fw-bold mb-1 text-dark" style="font-size: 0.8rem;">La contraseña debe cumplir con:</p>
@@ -76,6 +76,14 @@
                         <li id="req-number" class="text-danger">❌ Al menos un número</li>
                         <li id="req-special" class="text-danger">❌ Símbolo especial (@, ;, ., :, !, #, $, %, &, +, *)</li>
                     </ul>
+                </div>
+
+                <!-- Casilla de Términos y Condiciones (Obligatoria para habilitar el registro) -->
+                <div class="mb-3 form-check">
+                    <input type="checkbox" class="form-check-input" id="terminos" name="terminos" required>
+                    <label class="form-check-label small text-secondary" for="terminos">
+                        Acepto los <a href="#" data-bs-toggle="modal" data-bs-target="#modalTerminos" class="text-decoration-none fw-bold">Términos y Condiciones</a> y el Aviso de Privacidad.
+                    </label>
                 </div>
 
                 <button type="submit" id="submitBtn" class="btn btn-primary w-100 rounded-3 py-2 fw-bold shadow-sm" disabled>Registrarse</button>
@@ -92,6 +100,7 @@
         const strengthBar = document.getElementById('strengthBar');
         const strengthText = document.getElementById('strengthText');
         const submitBtn = document.getElementById('submitBtn');
+        const terminosCheckbox = document.getElementById('terminos');
 
         const reqLength = document.getElementById('req-length');
         const reqUpper = document.getElementById('req-upper');
@@ -101,26 +110,25 @@
         const togglePassword = document.getElementById('togglePassword');
         const toggleIcon = document.getElementById('toggleIcon');
 
-    togglePassword.addEventListener('click', function () {
-    // Alternar el tipo de input entre password y text
-    const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
-    passwordInput.setAttribute('type', type);
-    
-    // Cambiar el icono del ojo
-    if (type === 'text') {
-        toggleIcon.className = 'bi bi-eye-slash';
-    } else {
-        toggleIcon.className = 'bi bi-eye';
-    }
-});
+        togglePassword.addEventListener('click', function () {
+            const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+            passwordInput.setAttribute('type', type);
+            
+            if (type === 'text') {
+                toggleIcon.className = 'bi bi-eye-slash';
+            } else {
+                toggleIcon.className = 'bi bi-eye';
+            }
+        });
 
-        passwordInput.addEventListener('input', function() {
+        function evaluarFormulario() {
             const val = passwordInput.value;
             
             const hasLength = val.length >= 8;
             const hasUpper = /[A-Z]/.test(val);
             const hasNumber = /[0-9]/.test(val);
             const hasSpecial = /[@,;.!#$%&+*]/.test(val);
+            const aceptoTerminos = terminosCheckbox.checked;
 
             updateRequirement(reqLength, hasLength, "Mínimo 8 caracteres");
             updateRequirement(reqUpper, hasUpper, "Al menos una letra mayúscula");
@@ -155,12 +163,16 @@
                 strengthText.className = "text-success d-block mt-1 fw-bold";
             }
 
-            if (hasLength && hasUpper && hasNumber && hasSpecial) {
+            // El botón solo se habilita si se cumplen TODOS los requisitos de contraseña Y se aceptan los términos
+            if (hasLength && hasUpper && hasNumber && hasSpecial && aceptoTerminos) {
                 submitBtn.removeAttribute('disabled');
             } else {
                 submitBtn.setAttribute('disabled', 'true');
             }
-        });
+        }
+
+        passwordInput.addEventListener('input', evaluarFormulario);
+        terminosCheckbox.addEventListener('change', evaluarFormulario);
 
         function updateRequirement(element, isValid, text) {
             if (isValid) {
