@@ -7,6 +7,7 @@ import pytz
 import threading
 import uuid
 import resend
+import calendar
 from flask import Flask, request, jsonify, render_template, redirect, url_for, session
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
@@ -14,6 +15,8 @@ from googleapiclient.discovery import build
 from supabase import create_client
 from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import URLSafeTimedSerializer as Serializer
+from datetime import date, datetime
+
 
 app = Flask(__name__)
 
@@ -366,6 +369,9 @@ def login():
             
     return render_template('login.html', error=error)
 
+from datetime import date, datetime
+import calendar
+
 @app.route('/dashboard')
 def dashboard():
     if 'usuario_web' not in session and 'user_id' not in session:
@@ -374,39 +380,82 @@ def dashboard():
     doctor_actual = session.get('user_id') or session.get('usuario_web')
     calendar_id = session.get('calendar_id')
     
-    total_enviadas = 0
-    confirmadas = 0
-    canceladas = 0
+    enviadas_global = 0
+    enviadas_mes = 0
+    confirmadas_hoy = 0
+    canceladas_hoy = 0
     promedio = 0.0
     cantidad_encuestas = 0
 
-    try:
-        mes_actual = datetime.datetime.now().strftime('%Y-%m')
+    hoy_str = date.today().isoformat()  # Fecha actual en formato "YYYY-MM-DD"
 
+    try:
+        # 1. Obtener la fecha de registro del doctor para su ciclo mensual personalizado
+        res_doc = supabase.table('Doctores').select('created_at').eq('id', doctor_actual).execute()
+        if not res_doc.data:
+            res_doc = supabase.table('Doctores').select('created_at').eq('calendar_id', calendar_id).execute()
+        
+        doc_data = res_doc.data[0] if res_doc.data else {}
+        created_str = doc_data.get('created_at')
+
+        if created_str:
+            created_dt = datetime.fromisoformat(created_str.replace('Z', '+00:00')).date()
+            reg_day = created_dt.day
+            
+            today = date.today()
+            try:
+                inicio_ciclo = date(today.year, today.month, reg_day)
+            except ValueError:
+                last_day = calendar.monthrange(today.year, today.month)[1]
+                inicio_ciclo = date(today.year, today.month, min(reg_day, last_day))
+            
+            if inicio_ciclo > today:
+                if today.month == 1:
+                    prev_year, prev_month = today.year - 1, 12
+                else:
+                    prev_year, prev_month = today.year, today.month - 1
+                last_day_prev = calendar.monthrange(prev_year, prev_month)[1]
+                inicio_ciclo = date(prev_year, prev_month, min(reg_day, last_day_prev))
+            
+            inicio_mes_str = inicio_ciclo.isoformat()
+        else:
+            # Fallback al primer día del mes actual si no se encuentra la fecha de registro
+            inicio_mes_str = date.today().replace(day=1).isoformat()
+
+        # 2. Consultar citas procesadas en Supabase
         response_uso = supabase.table('citas_procesadas').select('*').eq('calendar_id', calendar_id).execute()
         
         if response_uso.data:
-            registros_mes = [r for r in response_uso.data if r.get('fecha', '').startswith(mes_actual)]
-            total_enviadas = len(registros_mes)
-            confirmadas = sum(1 for r in registros_mes if r.get('estado') in ['confirmada', 'confirmado'])
-            canceladas = sum(1 for r in registros_mes if r.get('estado') in ['cancelado', 'cancelada', 'reagendar'])
+            # Balance global: Total histórico de registros desde el inicio
+            enviadas_global = len(response_uso.data)
+            
+            # Total mensual: Filtrado desde el día exacto del ciclo del usuario
+            registros_ciclo = [r for r in response_uso.data if r.get('fecha', '') >= inicio_mes_str]
+            enviadas_mes = len(registros_ciclo)
 
+            # Citas confirmadas y canceladas de HOY (se reinician diario)
+            registros_hoy = [r for r in response_uso.data if r.get('fecha', '').startswith(hoy_str)]
+            confirmadas_hoy = sum(1 for r in registros_hoy if r.get('estado') in ['confirmada', 'confirmado'])
+            canceladas_hoy = sum(1 for r in registros_hoy if r.get('estado') in ['cancelado', 'cancelada', 'reagendar'])
+
+        # 3. Consultar encuestas y satisfacción (alineadas también al ciclo del usuario)
         response_encuestas = supabase.table('encuestas').select('calificacion, fecha').eq('calendar_id', calendar_id).execute()
         if response_encuestas.data:
-            encuestas_mes = [r for r in response_encuestas.data if r.get('fecha', '').startswith(mes_actual)]
+            encuestas_ciclo = [r for r in response_encuestas.data if r.get('fecha', '') >= inicio_mes_str]
             
-            if encuestas_mes:
-                total_cal = sum(float(r['calificacion']) for r in encuestas_mes if r.get('calificacion') is not None)
-                cantidad_encuestas = len(encuestas_mes)
+            if encuestas_ciclo:
+                total_cal = sum(float(r['calificacion']) for r in encuestas_ciclo if r.get('calificacion') is not None)
+                cantidad_encuestas = len(encuestas_ciclo)
                 promedio = round(total_cal / cantidad_encuestas, 1) if cantidad_encuestas > 0 else 0
 
     except Exception as e:
-        print(f"Error al calcular métricas seguras del dashboard: {e}")
+        print(f"Error al calcular métricas avanzadas del dashboard: {e}")
 
     metricas = {
-        "citas_enviadas": total_enviadas,
-        "citas_confirmadas": confirmadas,
-        "citas_canceladas": canceladas,
+        "citas_enviadas_global": enviadas_global,
+        "citas_enviadas_mes": enviadas_mes,
+        "citas_confirmadas": confirmadas_hoy,
+        "citas_canceladas": canceladas_hoy,
         "promedio_satisfaccion": f"{promedio} / 10",
         "total_encuestas": cantidad_encuestas
     }
