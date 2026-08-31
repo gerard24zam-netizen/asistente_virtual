@@ -44,30 +44,39 @@
 
         <!-- Tarjetas de Métricas -->
         <div class="row g-4 mb-4">
-            <!-- 1. Citas Enviadas / Total -->
-            <div class="col-md-4">
+            <!-- 1. Citas Enviadas Mes -->
+            <div class="col-md-3">
                 <div class="card border-0 shadow-sm rounded-4 p-3 bg-white border-start border-primary border-4 h-100">
-                    <h6 class="text-muted text-uppercase small fw-bold">Citas Enviadas / Total</h6>
-                    <h3 class="fw-bold text-primary mb-0 display-6">{{ datos.citas_enviadas }}</h3>
-                    <small class="text-muted">Balance total de citas procesadas</small>
+                    <h6 class="text-muted text-uppercase small fw-bold">Enviadas (Mes)</h6>
+                    <h3 class="fw-bold text-primary mb-0 display-6">{{ datos.citas_enviadas_mes }}</h3>
+                    <small class="text-muted">Ciclo mensual personalizado</small>
                 </div>
             </div>
 
-            <!-- 2. Confirmadas -->
-            <div class="col-md-4">
+            <!-- 2. Balance Global -->
+            <div class="col-md-3">
+                <div class="card border-0 shadow-sm rounded-4 p-3 bg-white border-start border-info border-4 h-100">
+                    <h6 class="text-muted text-uppercase small fw-bold">Balance Global</h6>
+                    <h3 class="fw-bold text-info mb-0 display-6">{{ datos.citas_enviadas_global }}</h3>
+                    <small class="text-muted">Histórico total acumulado</small>
+                </div>
+            </div>
+
+            <!-- 3. Confirmadas (Hoy) -->
+            <div class="col-md-3">
                 <div class="card border-0 shadow-sm rounded-4 p-3 bg-white border-start border-success border-4 h-100">
-                    <h6 class="text-muted text-uppercase small fw-bold">Confirmadas</h6>
+                    <h6 class="text-muted text-uppercase small fw-bold">Confirmadas (Hoy)</h6>
                     <h3 class="fw-bold text-success mb-0 display-6">{{ datos.citas_confirmadas }}</h3>
-                    <small class="text-muted">Asistencia asegurada</small>
+                    <small class="text-muted">Se reinicia diariamente</small>
                 </div>
             </div>
 
-            <!-- 3. Canceladas / Reagendar -->
-            <div class="col-md-4">
+            <!-- 4. Canceladas / Reagendar (Hoy) -->
+            <div class="col-md-3">
                 <div class="card border-0 shadow-sm rounded-4 p-3 bg-white border-start border-danger border-4 h-100">
-                    <h6 class="text-muted text-uppercase small fw-bold">Canceladas / Reagendar</h6>
+                    <h6 class="text-muted text-uppercase small fw-bold">Canceladas (Hoy)</h6>
                     <h3 class="fw-bold text-danger mb-0 display-6">{{ datos.citas_canceladas }}</h3>
-                    <small class="text-muted">Requieren atención</small>
+                    <small class="text-muted">Se reinicia diariamente</small>
                 </div>
             </div>
         </div>
