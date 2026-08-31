@@ -425,28 +425,35 @@ def dashboard():
         # 2. Consultar citas procesadas en Supabase
         response_uso = supabase.table('citas_procesadas').select('*').eq('calendar_id', calendar_id).execute()
         
+        citas_global_count = 0
+        citas_mes_count = 0
         if response_uso.data:
-            # Balance global: Total histórico de registros desde el inicio
-            enviadas_global = len(response_uso.data)
-            
-            # Total mensual: Filtrado desde el día exacto del ciclo del usuario
+            citas_global_count = len(response_uso.data)
             registros_ciclo = [r for r in response_uso.data if r.get('fecha', '') >= inicio_mes_str]
-            enviadas_mes = len(registros_ciclo)
+            citas_mes_count = len(registros_ciclo)
 
-            # Citas confirmadas y canceladas de HOY (se reinician diario)
             registros_hoy = [r for r in response_uso.data if r.get('fecha', '').startswith(hoy_str)]
             confirmadas_hoy = sum(1 for r in registros_hoy if r.get('estado') in ['confirmada', 'confirmado'])
             canceladas_hoy = sum(1 for r in registros_hoy if r.get('estado') in ['cancelado', 'cancelada', 'reagendar'])
 
         # 3. Consultar encuestas y satisfacción (alineadas también al ciclo del usuario)
-        response_encuestas = supabase.table('encuestas').select('calificacion, fecha').eq('calendar_id', calendar_id).execute()
+        response_encuestas = supabase.table('encuestas').select('*').eq('calendar_id', calendar_id).execute()
+        
+        encuestas_global_count = 0
+        encuestas_mes_count = 0
         if response_encuestas.data:
+            encuestas_global_count = len(response_encuestas.data)
             encuestas_ciclo = [r for r in response_encuestas.data if r.get('fecha', '') >= inicio_mes_str]
+            encuestas_mes_count = len(encuestas_ciclo)
             
             if encuestas_ciclo:
                 total_cal = sum(float(r['calificacion']) for r in encuestas_ciclo if r.get('calificacion') is not None)
                 cantidad_encuestas = len(encuestas_ciclo)
                 promedio = round(total_cal / cantidad_encuestas, 1) if cantidad_encuestas > 0 else 0
+
+        # 4. Consolidación de totales sumando citas procesadas y encuestas
+        enviadas_global = citas_global_count + encuestas_global_count
+        enviadas_mes = citas_mes_count + encuestas_mes_count
 
     except Exception as e:
         print(f"Error al calcular métricas avanzadas del dashboard: {e}")
@@ -461,7 +468,7 @@ def dashboard():
     }
     
     return render_template('dashboard.html', user=doctor_actual, datos=metricas)
-
+    
 @app.route('/change-password', methods=['GET', 'POST'])
 def change_password():
     if 'user_id' not in session:
