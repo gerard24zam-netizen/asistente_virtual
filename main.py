@@ -829,18 +829,75 @@ def procesar_webhook_asincrono(data):
                     resp_doc = f"Entendido Dr. {doc_nombre}, he habilitado la agenda para trabajar este domingo {domingo_date}. *Stein tu Asistente Virtual*"
                     enviar_mensaje(telefono_cliente, "text", contenido=resp_doc)
                     return
+
+                elif any(k in texto for k in ["hoy no trabajo", "no trabajo", "descanso"]):
+                    zona_mexico = pytz.timezone('America/Mexico_City')
+                    ahora = datetime.datetime.now(zona_mexico)
+                    fecha_hoy = ahora.date()
+                    
+                    fecha_pausa_fin = fecha_hoy
+                    
+                    match_fecha = re.search(r'(\d{1,2})[-/](\d{1,2})[-/](\d{4})', texto)
+                    if match_fecha:
+                        dia, mes, anio = map(int, match_fecha.groups())
+                        try:
+                            fecha_pausa_fin = datetime.date(anio, mes, dia)
+                        except ValueError:
+                            pass
+                    else:
+                        dias_semana_map = {
+                            "lunes": 0, "martes": 1, "miércoles": 2, "miercoles": 2, 
+                            "jueves": 3, "viernes": 4, "sábado": 5, "sabado": 5, "domingo": 6
+                        }
+                        for nombre_dia, dia_num in dias_semana_map.items():
+                            if nombre_dia in texto:
+                                dias_a_sumar = (dia_num - fecha_hoy.weekday() + 7) % 7
+                                if dias_a_sumar == 0:
+                                    dias_a_sumar = 7
+                                fecha_pausa_fin = fecha_hoy + datetime.timedelta(days=dias_a_sumar)
+                                break
+
+                    fecha_pausa_str = str(fecha_pausa_fin)
+                    
+                    try:
+                        supabase.table("Doctores").update({
+                            "jornada_fecha": str(fecha_hoy),
+                            "pausa_hasta": fecha_pausa_str
+                        }).eq("calendar_id", doc_cal_id).execute()
+                    except Exception as e:
+                        log(f"Error actualizando pausa en Supabase: {e}")
+
+                    if fecha_pausa_fin > fecha_hoy:
+                        resp_doc = f"Entendido Dr. {doc_nombre}, he pausado las notificaciones desde hoy hasta el {fecha_pausa_str}. Disfrute sus vacaciones o descanso. *Stein tu Asistente Virtual*"
+                    else:
+                        resp_doc = f"Siempre es bueno tomarse el día para darse un respiro, bajar el cortisol y despejar la mente, que descanse *{doc_nombre}*. Hasta mañana *Stein tu Asistente Virtual*"
+                    
+                    enviar_mensaje(telefono_cliente, "text", contenido=resp_doc)
+                    return
             
             if any(k in texto for k in ["sí, confirmar", "confirmar", "si"]):
                 doc, nombre_paciente = marcar_evento_calendario(telefono_cliente, 'confirmar')
                 if doc:
-                    doc_nombre = doc.get("name") or doc.get("nombre") or "su doctor"
-                    enviar_mensaje(telefono_cliente, "text", contenido=f"¡Gracias, {nombre_paciente}! Tu cita ha quedado confirmada con {doc_nombre}. ¡Te esperamos!")
-            elif any(k in texto for k in ["no, reagendar", "cancelar", "no"]):
-                doc, nombre_paciente = marcar_evento_calendario(telefono_cliente, 'cancelar')
+                    doc_nombre = doc.get("name") or doc.get("nombre") or "Doctor"
+                    wa_link = doc.get("wa_link") or doc.get("link") or ""
+                    respuesta_texto = f"*¡Perfecto!* Se ha confirmado tu cita de hoy con {doc_nombre}. Dudas o aclaraciones, comunícate aquí: {wa_link}.\n *nota: Recuerda preparate para epoca de lluvias*\n *¡Que tenga un excelente día!*"
+                    enviar_mensaje(telefono_cliente, "text", contenido=respuesta_texto)
+                    
+                    tel_doc = "".join(filter(str.isdigit, str(wa_link)))
+                    if tel_doc:
+                        enviar_mensaje(tel_doc, "text", contenido=f"✅ El paciente *{nombre_paciente}* ha confirmado su cita de hoy.")
+
+            elif any(k in texto for k in ["no", "reagendar", "cancelar"]):
+                doc, nombre_paciente = marcar_evento_calendario(telefono_cliente, 'reagendar')
                 if doc:
-                    enviar_mensaje(telefono_cliente, "text", contenido=f"Entendido, {nombre_paciente}. Hemos marcado tu cita como cancelada/reagendar. Por favor ponte en contacto para reprogramar.")
-            else:
-                match_cal = re.search(r'\b([1-9]|10)\b', texto)
+                    doc_nombre = doc.get("name") or doc.get("nombre") or "Doctor"
+                    wa_link = doc.get("wa_link") or doc.get("link") or ""
+                    respuesta_texto = f"*Se ha cancelado tu cita.* Para reagendar, por favor comunícate con *{doc_nombre}*.\n *Da clic en el link de Whatsapp* aquí: {wa_link} con gusto atenderemos tu solicitud.\n *¡Que tenga un excelente día!*"
+                    enviar_mensaje(telefono_cliente, "text", contenido=respuesta_texto)
+                    
+                    tel_doc = "".join(filter(str.isdigit, str(wa_link)))
+                    if tel_doc:
+                        enviar_mensaje(tel_doc, "text", contenido=f"❌ El paciente *{nombre_paciente}* indicó que necesita reagendar su cita de hoy.\n *IMPORTANTE* comunicarte con él, para que no pierda su cita.")
                 if match_cal:
                     calificacion = int(match_cal.group(1))
                     enviar_mensaje(telefono_cliente, "text", contenido="¡Muchas gracias por tu retroalimentación! La hemos registrado con éxito.")
