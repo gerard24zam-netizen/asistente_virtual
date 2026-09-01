@@ -980,7 +980,7 @@ def procesar_webhook_asincrono(data):
                 if doc:
                     doc_nombre = doc.get("name") or doc.get("nombre") or "Doctor"
                     wa_link = doc.get("wa_link") or doc.get("link") or ""
-                    respuesta_texto = f"*¡Perfecto!* Se ha confirmado tu cita de hoy con {doc_nombre}. Dudas o aclaraciones, comunícate aquí: {wa_link}.\n *Nota: Recuerda prepararte para epoca de lluvias*\n *¡Que tenga un excelente día!*"
+                    respuesta_texto = f"*¡Perfecto!* Se ha confirmado tu cita de hoy con {doc_nombre}. Dudas o aclaraciones, comunícate aquí: {wa_link}.\n*Nota: Recuerda prepararte para epoca de lluvias*\n *¡Que tenga un excelente día!*"
                     enviar_mensaje(telefono_cliente, "text", contenido=respuesta_texto)
                     
                     tel_doc = "".join(filter(str.isdigit, str(wa_link)))
