@@ -96,6 +96,73 @@ def buscar_doctor_por_telefono(telefono_recibido):
         log(f"Error buscando doctor por teléfono: {e}")
     return None
 
+@app.route('/enviar-recordatorios-hora', methods=['GET', 'POST'])
+def enviar_recordatorios_hora():
+    try:
+        zona_mexico = pytz.timezone('America/Mexico_City')
+        ahora = datetime.now(zona_mexico)
+        
+        # Obtenemos todas las citas de la base de datos para la fecha de hoy
+        fecha_hoy_str = ahora.strftime('%Y-%m-%d')
+        
+        # 1. Traer registros de citas programadas para hoy
+        res_citas = supabase.table('citas_procesadas').select('*').eq('fecha', fecha_hoy_str).execute()
+        citas_hoy = res_citas.data if res_citas.data else []
+
+        citas_notificadas = 0
+
+        for cita in citas_hoy:
+            # Si ya se envió el recordatorio de 1 hora o la cita está cancelada, la saltamos
+            if cita.get('recordatorio_1h_enviado') or cita.get('estado') in ['cancelado', 'cancelada']:
+                continue
+
+            # Asumiendo que la cita guardada tiene la hora de inicio en formato 'HH:MM' (ej: '16:00')
+            hora_cita_str = cita.get('hora')  
+            if not hora_cita_str:
+                continue
+
+            # Convertir la hora de la cita a un objeto datetime del día de hoy
+            hora_obj = datetime.strptime(hora_cita_str, '%H:%M').time()
+            dt_cita = datetime.combine(ahora.date(), hora_obj)
+            dt_cita = zona_mexico.localize(dt_cita)
+
+            # Calcular la diferencia en minutos entre la hora de la cita y la hora actual
+            diferencia_minutos = (dt_cita - ahora).total_seconds() / 60
+
+            # Si la cita empieza entre los próximos 50 y 70 minutos (aprox. 1 hora antes)
+            if 50 <= diferencia_minutos <= 70:
+                telefono = cita.get('telefono')
+                nombre_paciente = cita.get('nombre_paciente', 'Paciente')
+                nombre_profesional = cita.get('doc_nombre', 'doctor')
+
+                # Mensaje personalizado
+                mensaje = (
+                    f"Hola {nombre_paciente}, recordatorio, prepárate para tu cita con "
+                    f"{doc_nombre} empieza en una hora. Recuerda llegar a tiempo "
+                    f"y llevar el total de tu consulta.\n\n"
+                    f"*Stein A. V. P.*"
+                )
+
+                # 2. Función para enviar mensaje de WhatsApp
+                exito = enviar_mensaje_whatsapp(telefono, mensaje)
+
+                if exito:
+                    # 3. Marcar en Supabase que ya se envió el recordatorio de 1 hora
+                    supabase.table('citas_procesadas').update({
+                        'recordatorio_1h_enviado': True
+                    }).eq('id', cita['id']).execute()
+                    
+                    citas_notificadas += 1
+
+        return jsonify({
+            "status": "success",
+            "mensaje": f"Recordatorios de 1 hora enviados: {citas_notificadas}"
+        }), 200
+
+    except Exception as e:
+        print(f"Error al procesar recordatorios de 1 hora: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 # --- RUTAS DE GOOGLE OAUTH ---
 @app.route('/authorize')
 def authorize():
