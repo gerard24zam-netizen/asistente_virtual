@@ -610,7 +610,7 @@ def procesar_desde_supabase():
         return jsonify({"error": str(e)}), 500
 
     zona_mexico = pytz.timezone('America/Mexico_City')
-    ahora = datetime.datetime.now(zona_mexico)
+    ahora = datetime.now(zona_mexico)
     fecha_hoy = str(ahora.date())
 
     nombres_dias = {
@@ -726,7 +726,7 @@ def procesar_desde_supabase():
                 hora_str = "10:00 am"
                 if start_dt:
                     try:
-                        dt_obj = datetime.datetime.fromisoformat(start_dt).astimezone(zona_mexico)
+                        dt_obj = datetime.fromisoformat(start_dt).astimezone(zona_mexico)
                         hora_str = dt_obj.strftime('%I:%M %p').lower()
                     except:
                         pass
@@ -750,7 +750,7 @@ def procesar_desde_supabase():
                                 "calendar_id": cal_id,
                                 "telefono_client": telefono_paciente,
                                 "estado": "enviada",
-                                "fecha": start_dt if start_dt else str(datetime.datetime.now())
+                                "fecha": start_dt if start_dt else str(datetime.now())
                             }).execute()
                         except Exception as ex:
                             log(f"Error guardando cita procesada en Supabase: {ex}")
