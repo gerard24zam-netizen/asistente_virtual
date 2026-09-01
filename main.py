@@ -520,7 +520,7 @@ def dashboard():
         enviadas_global = citas_global_count + encuestas_global_count
         enviadas_mes = citas_mes_count + encuestas_mes_count
 
-   except Exception as e:
+    except Exception as e:
         import traceback
         print(f"Error crítico en dashboard: {e}", flush=True)
         traceback.print_exc()
