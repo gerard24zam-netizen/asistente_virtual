@@ -1029,7 +1029,7 @@ def procesar_webhook_asincrono(data):
                 # Detectar si el mensaje es una calificación del 1 al 10 para las encuestas
                 match_cal = re.search(r'\b([1-9]|10)\b', texto)
                 if match_cal and not doc_encontrado:
-                calificacion = int(match_cal.group(1))
+                    calificacion = int(match_cal.group(1))
                 
                 # Buscar a qué doctor pertenece este paciente para obtener su calendar_id
                 # (Puedes apoyarte de tu función existente para ubicar el evento o doctor por teléfono)
