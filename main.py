@@ -544,7 +544,7 @@ def procesar_desde_supabase():
         return jsonify({"error": str(e)}), 500
 
     zona_mexico = pytz.timezone('America/Mexico_City')
-    ahora = datetime.datetime.now(zona_mexico)
+    ahora = datetime.now(zona_mexico)
     fecha_hoy = str(ahora.date())
 
     nombres_dias = {
