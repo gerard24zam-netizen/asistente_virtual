@@ -362,49 +362,11 @@ def reset_with_token(token):
             error = f"Error al actualizar: {e}"
             
     return render_template('reset_token.html', error=error, success=success)
-
 @app.route('/')
 def index():
-    if 'user_id' not in session:
+    if 'user_id' not in session and 'usuario_web' not in session:
         return redirect(url_for('login'))
-        
-    user_id = session['user_id']
-    calendar_id = session.get('calendar_id')
-    
-    try:
-        response = supabase.table('Doctores').select('*').eq('id', user_id).execute()
-        user_data = response.data[0] if response.data else {}
-
-        res_citas = supabase.table('citas_procesadas').select('*').eq('calendar_id', calendar_id).execute()
-        citas = res_citas.data if res_citas.data else []
-        
-    except Exception as e:
-        print(f"Error al cargar métricas del panel: {e}")
-        user_data = {}
-        citas = []
-
-    total_enviadas = len(citas)
-    total_confirmadas = sum(1 for c in citas if c.get('estado') in ['confirmada', 'Confirmada', 'confirmado'])
-    total_canceladas = sum(1 for c in citas if c.get('estado') in ['cancelada', 'reagendar', 'Cancelada', 'cancelado'])
-
-    calificaciones = [float(c.get('calificacion')) for c in citas if c.get('calificacion') is not None]
-    total_encuestas = len(calificaciones)
-    
-    if total_encuestas > 0:
-        promedio = sum(calificaciones) / total_encuestas
-        promedio_satisfaccion = f"{promedio:.1f}"
-    else:
-        promedio_satisfaccion = "0.0"
-
-    datos = {
-        'citas_enviadas': total_enviadas,
-        'citas_confirmadas': total_confirmadas,
-        'citas_canceladas': total_canceladas,
-        'promedio_satisfaccion': promedio_satisfaccion,
-        'total_encuestas': total_encuestas
-    }
-
-    return render_template('dashboard.html', user=user_data, datos=datos)
+    return redirect(url_for('dashboard'))
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -445,6 +407,7 @@ def dashboard():
     doctor_actual = session.get('user_id') or session.get('usuario_web')
     calendar_id = session.get('calendar_id')
     
+    user_data = {}
     enviadas_global = 0
     enviadas_mes = 0
     confirmadas_hoy = 0
@@ -455,13 +418,13 @@ def dashboard():
     hoy_str = date.today().isoformat()  # Fecha actual en formato "YYYY-MM-DD"
 
     try:
-        # 1. Obtener la fecha de registro del doctor para su ciclo mensual personalizado
-        res_doc = supabase.table('Doctores').select('created_at').eq('id', doctor_actual).execute()
+        # 1. Obtener todos los datos del doctor (incluyendo created_at y campos de perfil)
+        res_doc = supabase.table('Doctores').select('*').eq('id', doctor_actual).execute()
         if not res_doc.data:
-            res_doc = supabase.table('Doctores').select('created_at').eq('calendar_id', calendar_id).execute()
+            res_doc = supabase.table('Doctores').select('*').eq('calendar_id', calendar_id).execute()
         
-        doc_data = res_doc.data[0] if res_doc.data else {}
-        created_str = doc_data.get('created_at')
+        user_data = res_doc.data[0] if res_doc.data else {}
+        created_str = user_data.get('created_at')
 
         if created_str:
             created_dt = datetime.fromisoformat(created_str.replace('Z', '+00:00')).date()
@@ -498,8 +461,8 @@ def dashboard():
             citas_mes_count = len(registros_ciclo)
 
             registros_hoy = [r for r in response_uso.data if r.get('fecha', '').startswith(hoy_str)]
-            confirmadas_hoy = sum(1 for r in registros_hoy if r.get('estado') in ['confirmada', 'confirmado'])
-            canceladas_hoy = sum(1 for r in registros_hoy if r.get('estado') in ['cancelado', 'cancelada', 'reagendar'])
+            confirmadas_hoy = sum(1 for r in registros_hoy if r.get('estado') in ['confirmada', 'confirmado', 'Confirmada'])
+            canceladas_hoy = sum(1 for r in registros_hoy if r.get('estado') in ['cancelado', 'cancelada', 'reagendar', 'Cancelada'])
 
         # 3. Consultar encuestas y satisfacción (alineadas también al ciclo del usuario)
         response_encuestas = supabase.table('encuestas').select('*').eq('calendar_id', calendar_id).execute()
@@ -538,7 +501,8 @@ def dashboard():
     print("Usuario en sesión:", session.get('user_id'), flush=True)
     print("Diccionario 'metricas' generado:", metricas, flush=True)
     
-    return render_template('dashboard.html', user=doctor_actual, datos=metricas)
+    # Se pasa user_data completo (diccionario) para que el template no falle al leer propiedades como user.name u ocupation
+    return render_template('dashboard.html', user=user_data, datos=metricas)
     
 @app.route('/change-password', methods=['GET', 'POST'])
 def change_password():
