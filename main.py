@@ -1000,7 +1000,7 @@ def procesar_webhook_asincrono(data):
                 if doc:
                     doc_nombre = doc.get("name") or doc.get("nombre") or "Doctor"
                     wa_link = doc.get("wa_link") or doc.get("link") or ""
-                    respuesta_texto = f"*¡Perfecto!* Se ha confirmado tu cita de hoy con {doc_nombre}. Dudas o aclaraciones, comunícate aquí: {wa_link}.\n *nota: Recuerda prepararte para epoca de lluvias*\n *¡Que tenga un excelente día!*"
+                    respuesta_texto = f"*¡Perfecto!* Se ha confirmado tu cita de hoy con {doc_nombre}. Dudas o aclaraciones, comunícate aquí: {wa_link}.\n *Nota: Recuerda prepararte para epoca de lluvias*\n *¡Que tenga un excelente día!*"
                     enviar_mensaje(telefono_cliente, "text", contenido=respuesta_texto)
                     
                     tel_doc = "".join(filter(str.isdigit, str(wa_link)))
@@ -1017,7 +1017,7 @@ def procesar_webhook_asincrono(data):
                     
                     tel_doc = "".join(filter(str.isdigit, str(wa_link)))
                     if tel_doc:
-                        enviar_mensaje(tel_doc, "text", contenido=f"❌ El paciente *{nombre_paciente}* indicó que necesita reagendar su cita de hoy a las.\n *IMPORTANTE* comunicarte con él, para que no pierda su cita.")
+                        enviar_mensaje(tel_doc, "text", contenido=f"❌ El paciente *{nombre_paciente}* indicó que necesita reagendar su cita de hoy.\n *IMPORTANTE* comunicarte con él, para que no pierda su cita.")
                 if 'match_cal' in locals() and match_cal:
                     calificacion = int(match_cal.group(1))
                     enviar_mensaje(telefono_cliente, "text", contenido="¡Muchas gracias por tu retroalimentación! La hemos registrado con éxito.")
