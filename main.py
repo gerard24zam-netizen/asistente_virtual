@@ -8,6 +8,7 @@ import threading
 import uuid
 import resend
 import calendar
+from datetime import date, datetime, timedelta
 from flask import Flask, request, jsonify, render_template, redirect, url_for, session
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
@@ -435,9 +436,6 @@ def login():
             
     return render_template('login.html', error=error)
 
-from datetime import date, datetime
-import calendar
-
 @app.route('/dashboard')
 def dashboard():
     if 'usuario_web' not in session and 'user_id' not in session:
@@ -770,7 +768,7 @@ def ejecutar_encuesta_nocturna():
             return jsonify({"status": "success", "message": "No hay doctores con encuesta activa hoy."}), 200
 
         zona_mexico = pytz.timezone('America/Mexico_City')
-        ahora = datetime.datetime.now(zona_mexico)
+        ahora = datetime.now(zona_mexico)
         inicio = ahora.replace(hour=0, minute=0, second=0).astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
         fin = ahora.replace(hour=23, minute=59, second=59).astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
 
@@ -831,7 +829,7 @@ def marcar_evento_calendario(telefono_recibido, accion):
         doctores = []
 
     zona_mexico = pytz.timezone('America/Mexico_City')
-    ahora_mexico = datetime.datetime.now(zona_mexico)
+    ahora_mexico = datetime.now(zona_mexico)
     inicio = ahora_mexico.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
     fin = ahora_mexico.replace(hour=23, minute=59, second=59, microsecond=0).astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
     
@@ -900,11 +898,11 @@ def procesar_webhook_asincrono(data):
 
                 elif any(k in texto for k in ["trabajo el fin de semana", "trabajar fin de semana", "trabajo sabado y domingo"]):
                     zona_mexico = pytz.timezone('America/Mexico_City')
-                    ahora = datetime.datetime.now(zona_mexico)
+                    ahora = datetime.now(zona_mexico)
                     hoy_date = ahora.date()
                     
-                    sabado_date = hoy_date + datetime.timedelta(days=((5 - hoy_date.weekday() + 7) % 7))
-                    domingo_date = hoy_date + datetime.timedelta(days=((6 - hoy_date.weekday() + 7) % 7))
+                    sabado_date = hoy_date + timedelta(days=((5 - hoy_date.weekday() + 7) % 7))
+                    domingo_date = hoy_date + timedelta(days=((6 - hoy_date.weekday() + 7) % 7))
                     trabajar_str = f"{sabado_date},{domingo_date}"
                     
                     try:
@@ -920,9 +918,9 @@ def procesar_webhook_asincrono(data):
 
                 elif any(k in texto for k in ["trabajo este sabado", "trabajo el sabado"]):
                     zona_mexico = pytz.timezone('America/Mexico_City')
-                    ahora = datetime.datetime.now(zona_mexico)
+                    ahora = datetime.now(zona_mexico)
                     hoy_date = ahora.date()
-                    sabado_date = hoy_date + datetime.timedelta(days=((5 - hoy_date.weekday() + 7) % 7))
+                    sabado_date = hoy_date + timedelta(days=((5 - hoy_date.weekday() + 7) % 7))
                     
                     try:
                         supabase.table("Doctores").update({
@@ -937,9 +935,9 @@ def procesar_webhook_asincrono(data):
 
                 elif any(k in texto for k in ["trabajo este domingo", "trabajo el domingo"]):
                     zona_mexico = pytz.timezone('America/Mexico_City')
-                    ahora = datetime.datetime.now(zona_mexico)
+                    ahora = datetime.now(zona_mexico)
                     hoy_date = ahora.date()
-                    domingo_date = hoy_date + datetime.timedelta(days=((6 - hoy_date.weekday() + 7) % 7))
+                    domingo_date = hoy_date + timedelta(days=((6 - hoy_date.weekday() + 7) % 7))
                     
                     try:
                         supabase.table("Doctores").update({
@@ -954,7 +952,7 @@ def procesar_webhook_asincrono(data):
 
                 elif any(k in texto for k in ["hoy no trabajo", "no trabajo", "descanso"]):
                     zona_mexico = pytz.timezone('America/Mexico_City')
-                    ahora = datetime.datetime.now(zona_mexico)
+                    ahora = datetime.now(zona_mexico)
                     fecha_hoy = ahora.date()
                     
                     fecha_pausa_fin = fecha_hoy
@@ -963,7 +961,7 @@ def procesar_webhook_asincrono(data):
                     if match_fecha:
                         dia, mes, anio = map(int, match_fecha.groups())
                         try:
-                            fecha_pausa_fin = datetime.date(anio, mes, dia)
+                            fecha_pausa_fin = date(anio, mes, dia)
                         except ValueError:
                             pass
                     else:
@@ -976,7 +974,7 @@ def procesar_webhook_asincrono(data):
                                 dias_a_sumar = (dia_num - fecha_hoy.weekday() + 7) % 7
                                 if dias_a_sumar == 0:
                                     dias_a_sumar = 7
-                                fecha_pausa_fin = fecha_hoy + datetime.timedelta(days=dias_a_sumar)
+                                fecha_pausa_fin = fecha_hoy + timedelta(days=dias_a_sumar)
                                 break
 
                     fecha_pausa_str = str(fecha_pausa_fin)
@@ -1020,7 +1018,7 @@ def procesar_webhook_asincrono(data):
                     tel_doc = "".join(filter(str.isdigit, str(wa_link)))
                     if tel_doc:
                         enviar_mensaje(tel_doc, "text", contenido=f"❌ El paciente *{nombre_paciente}* indicó que necesita reagendar su cita de hoy a las.\n *IMPORTANTE* comunicarte con él, para que no pierda su cita.")
-                if match_cal:
+                if 'match_cal' in locals() and match_cal:
                     calificacion = int(match_cal.group(1))
                     enviar_mensaje(telefono_cliente, "text", contenido="¡Muchas gracias por tu retroalimentación! La hemos registrado con éxito.")
                     
