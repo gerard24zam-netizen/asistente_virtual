@@ -531,9 +531,9 @@ def dashboard():
         "total_encuestas": cantidad_encuestas
     }
 
-        print("--- DEPURACIÓN DASHBOARD ---")
-        print("Usuario en sesión:", session.get('user_id')) # O la clave exacta con la que guardas tu sesión
-        print("Diccionario 'metricas' generado:", metricas)
+    print("--- DEPURACIÓN DASHBOARD ---")
+    print("Usuario en sesión:", session.get('user_id')) # O la clave exacta con la que guardas tu sesión
+    print("Diccionario 'metricas' generado:", metricas)
     
     return render_template('dashboard.html', user=doctor_actual, datos=metricas)
     
