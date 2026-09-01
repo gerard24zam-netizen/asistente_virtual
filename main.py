@@ -450,19 +450,28 @@ def dashboard():
             # Fallback al primer día del mes actual si no se encuentra la fecha de registro
             inicio_mes_str = date.today().replace(day=1).isoformat()
 
-        # 2. Consultar citas procesadas en Supabase
+       # 2. Consultar citas procesadas en Supabase con depuración
         response_uso = supabase.table('citas_procesadas').select('*').eq('calendar_id', calendar_id).execute()
         
         citas_global_count = 0
         citas_mes_count = 0
         if response_uso.data:
             citas_global_count = len(response_uso.data)
+            print(f"--- REGISTROS EN CITAS_PROCESADAS para {calendar_id} ---", flush=True)
+            for r in response_uso.data:
+                print(f"BD Registro -> Fecha: '{r.get('fecha')}' | Estado: '{r.get('estado')}'", flush=True)
+            print(f"Hoy string buscado: '{hoy_str}'", flush=True)
+
             registros_ciclo = [r for r in response_uso.data if r.get('fecha', '') >= inicio_mes_str]
             citas_mes_count = len(registros_ciclo)
 
-            registros_hoy = [r for r in response_uso.data if r.get('fecha', '').startswith(hoy_str)]
-            confirmadas_hoy = sum(1 for r in registros_hoy if r.get('estado') in ['confirmada', 'confirmado', 'Confirmada'])
-            canceladas_hoy = sum(1 for r in registros_hoy if r.get('estado') in ['cancelado', 'cancelada', 'reagendar', 'Cancelada'])
+            registros_hoy = [r for r in response_uso.data if str(r.get('fecha', '')).startswith(hoy_str)]
+            print(f"Registros coincidentes para hoy: {len(registros_hoy)}", flush=True)
+            
+            confirmadas_hoy = sum(1 for r in registros_hoy if str(r.get('estado', '')).strip().lower() in ['confirmada', 'confirmado', 'agendada'])
+            canceladas_hoy = sum(1 for r in registros_hoy if str(r.get('estado', '')).strip().lower() in ['cancelado', 'cancelada', 'reagendar'])
+        else:
+            print("--- ATENCIÓN: response_uso.data está vacío o no devolvió registros para este calendar_id ---", flush=True)
 
         # 3. Consultar encuestas y satisfacción (alineadas también al ciclo del usuario)
         response_encuestas = supabase.table('encuestas').select('*').eq('calendar_id', calendar_id).execute()
