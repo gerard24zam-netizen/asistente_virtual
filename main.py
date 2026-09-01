@@ -15,7 +15,7 @@ from googleapiclient.discovery import build
 from supabase import create_client
 from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import URLSafeTimedSerializer as Serializer
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 
 app = Flask(__name__)
