@@ -15,7 +15,6 @@ from googleapiclient.discovery import build
 from supabase import create_client
 from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import URLSafeTimedSerializer as Serializer
-from datetime import date, datetime, timedelta
 
 
 app = Flask(__name__)
@@ -611,7 +610,7 @@ def procesar_desde_supabase():
         return jsonify({"error": str(e)}), 500
 
     zona_mexico = pytz.timezone('America/Mexico_City')
-    ahora = datetime.now(zona_mexico)
+    ahora = datetime.datetime.now(zona_mexico)
     fecha_hoy = str(ahora.date())
 
     nombres_dias = {
