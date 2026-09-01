@@ -138,7 +138,7 @@ def enviar_recordatorios_hora():
                 # Mensaje personalizado
                 mensaje = (
                     f"Hola {nombre_paciente}, recordatorio, prepárate para tu cita con "
-                    f"{doc_nombre} empieza en una hora. Recuerda llegar a tiempo "
+                    f"{nombre_profesional} empieza en una hora. Recuerda llegar a tiempo "
                     f"y llevar el total de tu consulta.\n\n"
                     f"*Stein A. V. P.*"
                 )
