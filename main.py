@@ -440,6 +440,7 @@ def login():
 def dashboard():
     if 'usuario_web' not in session and 'user_id' not in session:
         return redirect(url_for('login'))
+    print("--- ¡ENTRÓ A LA RUTA DEL DASHBOARD! ---", flush=True)
     
     doctor_actual = session.get('user_id') or session.get('usuario_web')
     calendar_id = session.get('calendar_id')
