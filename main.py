@@ -1026,9 +1026,34 @@ def procesar_webhook_asincrono(data):
                     tel_doc = "".join(filter(str.isdigit, str(wa_link)))
                     if tel_doc:
                         enviar_mensaje(tel_doc, "text", contenido=f"❌ El paciente *{nombre_paciente}* indicó que necesita reagendar su cita de hoy.\n *IMPORTANTE* comunicate con él, para que no pierda su cita.")
-                if 'match_cal' in locals() and match_cal:
-                    calificacion = int(match_cal.group(1))
-                    enviar_mensaje(telefono_cliente, "text", contenido="¡Muchas gracias por tu retroalimentación! La hemos registrado con éxito.")
+                # Detectar si el mensaje es una calificación del 1 al 10 para las encuestas
+                match_cal = re.search(r'\b([1-9]|10)\b', texto)
+                if match_cal and not doc_encontrado:
+                calificacion = int(match_cal.group(1))
+                
+                # Buscar a qué doctor pertenece este paciente para obtener su calendar_id
+                # (Puedes apoyarte de tu función existente para ubicar el evento o doctor por teléfono)
+                doc, nombre_paciente = marcar_evento_calendario(telefono_cliente, 'consultar') # O la función que utilices para rastrear al doctor del cliente
+                
+                if doc:
+                    doc_cal_id = doc.get("calendar_id")
+                    try:
+                        zona_mexico = pytz.timezone('America/Mexico_City')
+                        hoy_str = datetime.now(zona_mexico).date().isoformat()
+                        
+                        # Guardar la encuesta en Supabase
+                        supabase.table('encuestas').insert({
+                            'calendar_id': doc_cal_id,
+                            'calificacion': calificacion,
+                            'fecha': hoy_str
+                        }).execute()
+                        
+                        log(f"Encuesta registrada: {calificacion} para calendar_id: {doc_cal_id}")
+                    except Exception as e:
+                        log(f"Error guardando encuesta en Supabase: {e}")
+
+                enviar_mensaje(telefono_cliente, "text", contenido="¡Muchas gracias por tu retroalimentación! La hemos registrado con éxito.")
+                return
                     
     except Exception as e:
         log(f"Error procesando webhook asíncrono: {e}")
