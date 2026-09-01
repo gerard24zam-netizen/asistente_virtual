@@ -680,7 +680,7 @@ def procesar_desde_supabase():
                 except Exception as ex:
                     log(f"No se pudo guardar jornada_fecha en Supabase: {ex}")
 
-        ayer_str = str((ahora - datetime.timedelta(days=1)).date())
+        ayer_str = str((ahora - timedelta(days=1)).date())
         promedio_str = "Sin calificaciones aún"
         total_respuestas = 0
         
