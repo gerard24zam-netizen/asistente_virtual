@@ -979,7 +979,21 @@ def procesar_webhook_asincrono(data):
                 doc, nombre_paciente = marcar_evento_calendario(telefono_cliente, 'confirmar')
                 if doc:
                     doc_nombre = doc.get("name") or doc.get("nombre") or "Doctor"
+                    doc_cal_id = doc.get("calendar_id")
                     wa_link = doc.get("wa_link") or doc.get("link") or ""
+                    
+                    # Registrar la cita confirmada en Supabase para el Dashboard
+                    try:
+                        zona_mexico = pytz.timezone('America/Mexico_City')
+                        hoy_str = datetime.now(zona_mexico).date().isoformat()
+                        supabase.table('citas_procesadas').insert({
+                            'calendar_id': doc_cal_id,
+                            'fecha': hoy_str,
+                            'estado': 'confirmada'
+                        }).execute()
+                    except Exception as e:
+                        log(f"Error guardando cita confirmada en Supabase: {e}")
+
                     respuesta_texto = f"*¡Perfecto!* Se ha confirmado tu cita de hoy con {doc_nombre}. Dudas o aclaraciones, comunícate aquí: {wa_link}.\n*Nota: Recuerda prepararte para epoca de lluvias*\n *¡Que tenga un excelente día!*"
                     enviar_mensaje(telefono_cliente, "text", contenido=respuesta_texto)
                     
@@ -991,13 +1005,27 @@ def procesar_webhook_asincrono(data):
                 doc, nombre_paciente = marcar_evento_calendario(telefono_cliente, 'reagendar')
                 if doc:
                     doc_nombre = doc.get("name") or doc.get("nombre") or "Doctor"
+                    doc_cal_id = doc.get("calendar_id")
                     wa_link = doc.get("wa_link") or doc.get("link") or ""
+
+                    # Registrar la cita cancelada/reagendar en Supabase para el Dashboard
+                    try:
+                        zona_mexico = pytz.timezone('America/Mexico_City')
+                        hoy_str = datetime.now(zona_mexico).date().isoformat()
+                        supabase.table('citas_procesadas').insert({
+                            'calendar_id': doc_cal_id,
+                            'fecha': hoy_str,
+                            'estado': 'reagendar'
+                        }).execute()
+                    except Exception as e:
+                        log(f"Error guardando cita cancelada en Supabase: {e}")
+
                     respuesta_texto = f"*Se ha cancelado tu cita.* Para reagendar, por favor comunícate con *{doc_nombre}*.\n *Da clic en el link de Whatsapp* aquí: {wa_link} con gusto atenderemos tu solicitud.\n *¡Que tenga un excelente día!*"
                     enviar_mensaje(telefono_cliente, "text", contenido=respuesta_texto)
                     
                     tel_doc = "".join(filter(str.isdigit, str(wa_link)))
                     if tel_doc:
-                        enviar_mensaje(tel_doc, "text", contenido=f"❌ El paciente *{nombre_paciente}* indicó que necesita reagendar su cita de hoy.\n *IMPORTANTE* comunicarte con él, para que no pierda su cita.")
+                        enviar_mensaje(tel_doc, "text", contenido=f"❌ El paciente *{nombre_paciente}* indicó que necesita reagendar su cita de hoy.\n *IMPORTANTE* comunicate con él, para que no pierda su cita.")
                 if 'match_cal' in locals() and match_cal:
                     calificacion = int(match_cal.group(1))
                     enviar_mensaje(telefono_cliente, "text", contenido="¡Muchas gracias por tu retroalimentación! La hemos registrado con éxito.")
