@@ -965,9 +965,9 @@ def procesar_webhook_asincrono(data):
                     if tel_doc:
                         enviar_mensaje(tel_doc, "text", contenido=f"❌ El paciente *{nombre_paciente}* indicó que necesita reagendar su cita de hoy.\n *IMPORTANTE* comunicate con él, para que no pierda su cita.")
 # Bloque independiente para la encuesta (alineado al nivel de los condicionales principales)
-        match_cal = re.search(r'\b([1-9]|10)\b', texto)
-        if match_cal:
-            calificacion = int(match_cal.group(1))
+            match_cal = re.search(r'\b([1-9]|10)\b', texto)
+            if match_cal:
+                calificacion = int(match_cal.group(1))
             
             doc, nombre_paciente = marcar_evento_calendario(telefono_cliente, 'consultar')
             if doc:
@@ -988,6 +988,9 @@ def procesar_webhook_asincrono(data):
 
             enviar_mensaje(telefono_cliente, "text", contenido="¡Muchas gracias por tu retroalimentación! La hemos registrado con éxito.")
             return
+
+    except Exception as e:
+        log(f"Error procesando webhook asíncrono: {e}")
 
 
 @app.route('/ejecutar-encuesta-nocturna', methods=['POST'])
