@@ -964,30 +964,31 @@ def procesar_webhook_asincrono(data):
                     tel_doc = "".join(filter(str.isdigit, str(wa_link)))
                     if tel_doc:
                         enviar_mensaje(tel_doc, "text", contenido=f"❌ El paciente *{nombre_paciente}* indicó que necesita reagendar su cita de hoy.\n *IMPORTANTE* comunicate con él, para que no pierda su cita.")
-            # 1. Bloque independiente para detectar la calificación del 1 al 10 del paciente
-            match_cal = re.search(r'\b([1-9]|10)\b', texto)
-            if match_cal:
-                calificacion = int(match_cal.group(1))
-                # Buscamos a qué doctor pertenece este paciente por su teléfono
-                doc, nombre_paciente = marcar_evento_calendario(telefono_cliente, 'consultar')  
-                if doc:
-                    doc_cal_id = doc.get("calendar_id")
-                    try:
-                        zona_mexico = pytz.timezone('America/Mexico_City')
-                        hoy_str = datetime.now(zona_mexico).date().isoformat() 
-                        # Guardar la calificación en la tabla 'encuestas' de Supabase
-                        supabase.table('encuestas').insert({
-                            'calendar_id': doc_cal_id,
-                            'calificacion': calificacion,
-                            'fecha': hoy_str
-                        
-                        log(f"Encuesta registrada con calificación {calificacion} para calendar_id: {doc_cal_id}")
-                    except Exception as e:
-                        log(f"Error guardando encuesta en Supabase: {e}")
+# Bloque independiente para la encuesta (alineado al nivel de los condicionales principales)
+        match_cal = re.search(r'\b([1-9]|10)\b', texto)
+        if match_cal:
+            calificacion = int(match_cal.group(1))
+            
+            doc, nombre_paciente = marcar_evento_calendario(telefono_cliente, 'consultar')
+            if doc:
+                doc_cal_id = doc.get("calendar_id")
+                try:
+                    zona_mexico = pytz.timezone('America/Mexico_City')
+                    hoy_str = datetime.now(zona_mexico).date().isoformat()
+                    
+                    supabase.table('encuestas').insert({
+                        'calendar_id': doc_cal_id,
+                        'calificacion': calificacion,
+                        'fecha': hoy_str
+                    }).execute()
+                    
+                    log(f"Encuesta registrada con calificación {calificacion} para calendar_id: {doc_cal_id}")
+                except Exception as e:
+                    log(f"Error guardando encuesta en Supabase: {e}")
 
-                # Mensaje de respuesta automático al paciente agradeciendo su retroalimentación
-                enviar_mensaje(telefono_cliente, "text", contenido="¡Muchas gracias por tu retroalimentación! La hemos registrado con éxito.")
-                return
+            enviar_mensaje(telefono_cliente, "text", contenido="¡Muchas gracias por tu retroalimentación! La hemos registrado con éxito.")
+            return
+
 
 @app.route('/ejecutar-encuesta-nocturna', methods=['POST'])
 def ejecutar_encuesta_nocturna():
