@@ -964,6 +964,7 @@ def procesar_webhook_asincrono(data):
                     tel_doc = "".join(filter(str.isdigit, str(wa_link)))
                     if tel_doc:
                         enviar_mensaje(tel_doc, "text", contenido=f"❌ El paciente *{nombre_paciente}* indicó que necesita reagendar su cita de hoy.\n *IMPORTANTE* comunicate con él, para que no pierda su cita.")
+            return
 # Bloque independiente para la encuesta (alineado al nivel de los condicionales principales)
             match_cal = re.search(r'\b([1-9]|10)\b', texto)
             if match_cal:
