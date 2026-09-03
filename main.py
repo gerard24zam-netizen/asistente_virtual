@@ -980,7 +980,6 @@ def procesar_webhook_asincrono(data):
                             'calendar_id': doc_cal_id,
                             'calificacion': calificacion,
                             'fecha': hoy_str
-                        }).execute()
                         
                         log(f"Encuesta registrada con calificación {calificacion} para calendar_id: {doc_cal_id}")
                     except Exception as e:
