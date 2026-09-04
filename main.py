@@ -964,33 +964,29 @@ def procesar_webhook_asincrono(data):
                     if tel_doc:
                         enviar_mensaje(tel_doc, "text", contenido=f"❌ El paciente *{nombre_paciente}* indicó que necesita reagendar su cita de hoy.\n *IMPORTANTE* comunicate con él, para que no pierda su cita.")
                 return  # <--- Cierra y detiene el flujo aquí
-# Bloque independiente para la encuesta (alineado al nivel de los condicionales principales)
+# Bloque de encuesta encapsulado (solo se ejecuta si el mensaje trae una calificación del 1 al 10)
             match_cal = re.search(r'\b([1-9]|10)\b', texto)
             if match_cal:
                 calificacion = int(match_cal.group(1))
-            
-            doc, nombre_paciente = marcar_evento_calendario(telefono_cliente, 'consultar')
-            if doc:
-                doc_cal_id = doc.get("calendar_id")
-                try:
-                    zona_mexico = pytz.timezone('America/Mexico_City')
-                    hoy_str = datetime.now(zona_mexico).date().isoformat()
-                    
-                    supabase.table('encuestas').insert({
-                        'calendar_id': doc_cal_id,
-                        'calificacion': calificacion,
-                        'fecha': hoy_str
-                    }).execute()
-                    
-                    log(f"Encuesta registrada con calificación {calificacion} para calendar_id: {doc_cal_id}")
-                except Exception as e:
-                    log(f"Error guardando encuesta en Supabase: {e}")
+                doc, nombre_paciente = marcar_evento_calendario(telefono_cliente, 'consultar')
+                if doc:
+                    doc_cal_id = doc.get("calendar_id")
+                    try:
+                        zona_mexico = pytz.timezone('America/Mexico_City')
+                        hoy_str = datetime.now(zona_mexico).date().isoformat()
+                        
+                        supabase.table('encuestas').insert({
+                            'calendar_id': doc_cal_id,
+                            'calificacion': calificacion,
+                            'fecha': hoy_str
+                        }).execute()
+                        
+                        log(f"Encuesta registrada con calificación {calificacion} para calendar_id: {doc_cal_id}")
+                    except Exception as e:
+                        log(f"Error guardando encuesta en Supabase: {e}")
 
-            enviar_mensaje(telefono_cliente, "text", contenido="¡Muchas gracias por tu retroalimentación! La hemos registrado con éxito.")
-            return
-
-    except Exception as e:
-        log(f"Error procesando webhook asíncrono: {e}")
+                enviar_mensaje(telefono_cliente, "text", contenido="¡Muchas gracias por tu retroalimentación! La hemos registrado con éxito.")
+                return
 
 
 @app.route('/ejecutar-encuesta-nocturna', methods=['POST'])
