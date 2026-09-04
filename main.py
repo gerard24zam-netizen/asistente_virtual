@@ -920,7 +920,6 @@ def procesar_webhook_asincrono(data):
                     doc_cal_id = doc.get("calendar_id")
                     wa_link = doc.get("wa_link") or doc.get("link") or ""
                     
-                    # Registrar la cita confirmada en Supabase para el Dashboard
                     try:
                         zona_mexico = pytz.timezone('America/Mexico_City')
                         hoy_str = datetime.now(zona_mexico).date().isoformat()
@@ -938,6 +937,7 @@ def procesar_webhook_asincrono(data):
                     tel_doc = "".join(filter(str.isdigit, str(wa_link)))
                     if tel_doc:
                         enviar_mensaje(tel_doc, "text", contenido=f"✅ El paciente *{nombre_paciente}* ha confirmado su cita de hoy.")
+                return  # <--- Cierra y detiene el flujo aquí
 
             elif any(k in texto for k in ["no", "reagendar", "cancelar"]):
                 doc, nombre_paciente = marcar_evento_calendario(telefono_cliente, 'reagendar')
@@ -946,7 +946,6 @@ def procesar_webhook_asincrono(data):
                     doc_cal_id = doc.get("calendar_id")
                     wa_link = doc.get("wa_link") or doc.get("link") or ""
 
-                    # Registrar la cita cancelada/reagendar en Supabase para el Dashboard
                     try:
                         zona_mexico = pytz.timezone('America/Mexico_City')
                         hoy_str = datetime.now(zona_mexico).date().isoformat()
@@ -964,7 +963,7 @@ def procesar_webhook_asincrono(data):
                     tel_doc = "".join(filter(str.isdigit, str(wa_link)))
                     if tel_doc:
                         enviar_mensaje(tel_doc, "text", contenido=f"❌ El paciente *{nombre_paciente}* indicó que necesita reagendar su cita de hoy.\n *IMPORTANTE* comunicate con él, para que no pierda su cita.")
-            return
+                return  # <--- Cierra y detiene el flujo aquí
 # Bloque independiente para la encuesta (alineado al nivel de los condicionales principales)
             match_cal = re.search(r'\b([1-9]|10)\b', texto)
             if match_cal:
