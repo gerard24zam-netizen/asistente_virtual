@@ -102,57 +102,68 @@ def enviar_recordatorios_hora():
         zona_mexico = pytz.timezone('America/Mexico_City')
         ahora = datetime.now(zona_mexico)
         
-        # Obtenemos todas las citas de la base de datos para la fecha de hoy
-        fecha_hoy_str = ahora.strftime('%Y-%m-%d')
-        
-        # 1. Traer registros de citas programadas para hoy
-        res_citas = supabase.table('citas_procesadas').select('*').eq('fecha', fecha_hoy_str).execute()
-        citas_hoy = res_citas.data if res_citas.data else []
+        response = supabase.table("Doctores").select("*").execute()
+        doctores = response.data if response.data else []
 
         citas_notificadas = 0
+        inicio = ahora.replace(hour=0, minute=0, second=0).astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
+        fin = ahora.replace(hour=23, minute=59, second=59).astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
 
-        for cita in citas_hoy:
-            # Si ya se envió el recordatorio de 1 hora o la cita está cancelada, la saltamos
-            if cita.get('recordatorio_1h_enviado') or cita.get('estado') in ['cancelado', 'cancelada']:
+        for doc in doctores:
+            cal_id = doc.get("calendar_id") or doc.get("email")
+            if not cal_id:
+                continue
+            
+            calendario = obtener_servicio_calendar_por_doctor(cal_id)
+            if not calendario:
+                continue
+            
+            try:
+                eventos = calendario.events().list(calendarId=cal_id, timeMin=inicio, timeMax=fin, singleEvents=True).execute().get('items', [])
+            except Exception:
                 continue
 
-            # Asumiendo que la cita guardada tiene la hora de inicio en formato 'HH:MM' (ej: '16:00')
-            hora_cita_str = cita.get('hora')  
-            if not hora_cita_str:
-                continue
+            for evento in eventos:
+                start_dt = evento.get('start', {}).get('dateTime')
+                if not start_dt:
+                    continue
+                
+                dt_cita = datetime.fromisoformat(start_dt).astimezone(zona_mexico)
+                diferencia_minutos = (dt_cita - ahora).total_seconds() / 60
 
-            # Convertir la hora de la cita a un objeto datetime del día de hoy
-            hora_obj = datetime.strptime(hora_cita_str, '%H:%M').time()
-            dt_cita = datetime.combine(ahora.date(), hora_obj)
-            dt_cita = zona_mexico.localize(dt_cita)
-
-            # Calcular la diferencia en minutos entre la hora de la cita y la hora actual
-            diferencia_minutos = (dt_cita - ahora).total_seconds() / 60
-
-            # Si la cita empieza entre los próximos 50 y 70 minutos (aprox. 1 hora antes)
-            if 50 <= diferencia_minutos <= 70:
-                telefono = cita.get('telefono')
-                nombre_paciente = cita.get('nombre_paciente', 'Paciente')
-                nombre_profesional = cita.get('doc_nombre', 'doctor')
-
-                # Mensaje personalizado
-                mensaje = (
-                    f"Hola {nombre_paciente}, recordatorio, prepárate para tu cita con "
-                    f"{nombre_profesional} empieza en una hora. Recuerda llegar a tiempo "
-                    f"y llevar el total de tu consulta.\n\n"
-                    f"*Stein A. V. P.*"
-                )
-
-                # 2. Función para enviar mensaje de WhatsApp
-                exito = enviar_mensaje_whatsapp(telefono, mensaje)
-
-                if exito:
-                    # 3. Marcar en Supabase que ya se envió el recordatorio de 1 hora
-                    supabase.table('citas_procesadas').update({
-                        'recordatorio_1h_enviado': True
-                    }).eq('id', cita['id']).execute()
+                if 50 <= diferencia_minutos <= 70:
+                    titulo = evento.get('summary', '')
+                    if "✅" in titulo or "❌" in titulo or "cancelado" in titulo.lower() or "⏰" in titulo:
+                        continue
                     
-                    citas_notificadas += 1
+                    texto = f"{titulo} {evento.get('description', '')}"
+                    digitos = "".join(filter(str.isdigit, texto))
+                    if len(digitos) < 10:
+                        continue
+                    
+                    telefono = "52" + digitos[-10:]
+                    nombre_paciente = extraer_nombre_limpio(titulo)
+                    nombre_profesional = doc.get("name") or doc.get("nombre") or "doctor"
+
+                    mensaje = (
+                        f"Hola {nombre_paciente}, recordatorio, prepárate para tu cita con "
+                        f"{nombre_profesional} empieza en una hora. Recuerda llegar a tiempo "
+                        f"y llevar el total de tu consulta.\n\n"
+                        f"*Stein A. V. P.*"
+                    )
+
+                    exito = enviar_mensaje(telefono, "text", contenido=mensaje)
+                    if exito and exito.status_code < 400:
+                        try:
+                            supabase.table('metricas_y_registros').insert({
+                                'calendar_id': cal_id,
+                                'estado_accion': 'mensaje_enviado',
+                                'confirmado': False
+                            }).execute()
+                        except Exception as e:
+                            log(f"Error guardando métrica de recordatorio de 1h: {e}")
+
+                        citas_notificadas += 1
 
         return jsonify({
             "status": "success",
@@ -162,7 +173,7 @@ def enviar_recordatorios_hora():
     except Exception as e:
         print(f"Error al procesar recordatorios de 1 hora: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
-
+        
 # --- RUTAS DE GOOGLE OAUTH ---
 @app.route('/authorize')
 def authorize():
@@ -414,6 +425,9 @@ def dashboard():
     canceladas_hoy = 0
     promedio = 0.0
     cantidad_encuestas = 0
+    total_mensajes_facturables = 0
+    costo_base_meta = 0.0
+    precio_final_cliente = 0.0
 
     hoy_str = date.today().isoformat()  # Fecha actual en formato "YYYY-MM-DD"
 
@@ -450,47 +464,52 @@ def dashboard():
             # Fallback al primer día del mes actual si no se encuentra la fecha de registro
             inicio_mes_str = date.today().replace(day=1).isoformat()
 
-       # 2. Consultar citas procesadas en Supabase con depuración
-        response_uso = supabase.table('citas_procesadas').select('*').eq('calendar_id', calendar_id).execute()
+        # 2. Consultar la tabla unificada metricas_y_registros en Supabase
+        response_uso = supabase.table('metricas_y_registros').select('*').eq('calendar_id', calendar_id).execute()
         
-        citas_global_count = 0
-        citas_mes_count = 0
         if response_uso.data:
-            citas_global_count = len(response_uso.data)
-            print(f"--- REGISTROS EN CITAS_PROCESADAS para {calendar_id} ---", flush=True)
-            for r in response_uso.data:
-                print(f"BD Registro -> Fecha: '{r.get('fecha')}' | Estado: '{r.get('estado')}'", flush=True)
+            registros = response_uso.data
+            enviadas_global = len(registros)
+            
+            print(f"--- REGISTROS EN METRICAS_Y_REGISTROS para {calendar_id} ---", flush=True)
+            for r in registros:
+                print(f"BD Registro -> Creado: '{r.get('created_at')}' | Estado/Acción: '{r.get('estado_accion')}'", flush=True)
             print(f"Hoy string buscado: '{hoy_str}'", flush=True)
 
-            registros_ciclo = [r for r in response_uso.data if r.get('fecha', '') >= inicio_mes_str]
-            citas_mes_count = len(registros_ciclo)
+            # Filtrar registros del ciclo mensual actual
+            registros_ciclo = [r for r in registros if str(r.get('created_at', '')) >= inicio_mes_str]
+            enviadas_mes = len(registros_ciclo)
 
-            registros_hoy = [r for r in response_uso.data if str(r.get('fecha', '')).startswith(hoy_str)]
+            # Filtrar registros del día de hoy
+            registros_hoy = [r for r in registros if str(r.get('created_at', '')).startswith(hoy_str)]
             print(f"Registros coincidentes para hoy: {len(registros_hoy)}", flush=True)
             
-            confirmadas_hoy = sum(1 for r in registros_hoy if str(r.get('estado', '')).strip().lower() in ['confirmada', 'confirmado', 'agendada'])
-            canceladas_hoy = sum(1 for r in registros_hoy if str(r.get('estado', '')).strip().lower() in ['cancelado', 'cancelada', 'reagendar'])
-        else:
-            print("--- ATENCIÓN: response_uso.data está vacío o no devolvió registros para este calendar_id ---", flush=True)
+            confirmadas_hoy = sum(1 for r in registros_hoy if r.get('estado_accion') == 'cita_confirmada')
+            canceladas_hoy = sum(1 for r in registros_hoy if r.get('estado_accion') == 'cita_reagendada')
 
-        # 3. Consultar encuestas y satisfacción (alineadas también al ciclo del usuario)
-        response_encuestas = supabase.table('encuestas').select('*').eq('calendar_id', calendar_id).execute()
-        
-        encuestas_global_count = 0
-        encuestas_mes_count = 0
-        if response_encuestas.data:
-            encuestas_global_count = len(response_encuestas.data)
-            encuestas_ciclo = [r for r in response_encuestas.data if r.get('fecha', '') >= inicio_mes_str]
-            encuestas_mes_count = len(encuestas_ciclo)
+            # 3. Calcular encuestas y satisfacción dentro del ciclo mensual
+            encuestas_ciclo = [r for r in registros_ciclo if r.get('estado_accion') == 'encuesta_calificacion' and r.get('calificacion') is not None]
+            cantidad_encuestas = len(encuestas_ciclo)
+            if cantidad_encuestas > 0:
+                total_cal = sum(float(r['calificacion']) for r in encuestas_ciclo)
+                promedio = round(total_cal / cantidad_encuestas, 1)
+
+           # 4. Cálculo de consumo de Meta y Modelo de Precios por Niveles (Tiers)
+            total_mensajes_facturables = sum(1 for r in registros_ciclo if r.get('estado_accion') == 'mensaje_enviado')
             
-            if encuestas_ciclo:
-                total_cal = sum(float(r['calificacion']) for r in encuestas_ciclo if r.get('calificacion') is not None)
-                cantidad_encuestas = len(encuestas_ciclo)
-                promedio = round(total_cal / cantidad_encuestas, 1) if cantidad_encuestas > 0 else 0
+            COSTO_META_UNITARIO = 0.45  # Lo que te cuesta internamente cada mensaje en Meta (MXN)
+            costo_base_meta = total_mensajes_facturables * COSTO_META_UNITARIO
 
-        # 4. Consolidación de totales sumando citas procesadas y encuestas
-        enviadas_global = citas_global_count + encuestas_global_count
-        enviadas_mes = citas_mes_count + encuestas_mes_count
+            # Definición de tu esquema comercial por rangos de citas:
+            if total_mensajes_facturables <= 29:
+                # Esquema por evento para bajo volumen (ej. $15 por cita enviada)
+                precio_final_cliente = total_mensajes_facturables * 15.0
+            elif 30 <= total_mensajes_facturables <= 60:
+                # Rango Estándar (30 a 60 citas)
+                precio_final_cliente = 350.0
+            else:
+                # Rango Alto (61 en adelante, con tope operativo sugerido en 250 citas)
+                precio_final_cliente = 500.0
 
     except Exception as e:
         import traceback
@@ -503,15 +522,35 @@ def dashboard():
         "citas_confirmadas": confirmadas_hoy,
         "citas_canceladas": canceladas_hoy,
         "promedio_satisfaccion": f"{promedio} / 10",
-        "total_encuestas": cantidad_encuestas
+        "total_encuestas": cantidad_encuestas,
+        "mensajes_facturables": total_mensajes_facturables,
+        "costo_meta": round(costo_base_meta, 2),
+        "precio_sugerido": round(precio_final_cliente, 2)
     }
 
     print("--- DEPURACIÓN DASHBOARD ---", flush=True)
     print("Usuario en sesión:", session.get('user_id'), flush=True)
     print("Diccionario 'metricas' generado:", metricas, flush=True)
     
-    # Se pasa user_data completo (diccionario) para que el template no falle al leer propiedades como user.name u ocupation
     return render_template('dashboard.html', user=user_data, datos=metricas)
+
+# 1. Agrega esta nueva ruta en tu main.py para guardar el plan que el doctor elija en el selector
+@app.route('/actualizar-plan', methods=['POST'])
+def actualizar_plan():
+    if 'usuario_web' not in session and 'user_id' not in session:
+        return jsonify({"status": "error", "message": "No autorizado"}), 401
+    
+    doctor_actual = session.get('user_id') or session.get('usuario_web')
+    calendar_id = session.get('calendar_id')
+    
+    nuevo_plan = request.form.get('plan') # 'pay_per_use', 'estandar', 'alto'
+    
+    try:
+        # Actualizar en la tabla Doctores de Supabase
+        supabase.table('Doctores').update({'plan_seleccionado': nuevo_plan}).eq('id', doctor_actual).execute()
+        return jsonify({"status": "success", "mensaje": "Plan actualizado correctamente"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
     
 @app.route('/change-password', methods=['GET', 'POST'])
 def change_password():
@@ -577,9 +616,6 @@ def home():
 
 @app.route('/ejecutar-proceso-diario', methods=['POST'])
 def procesar_desde_supabase():
-    if not supabase:
-        return jsonify({"error": "Falta configuración de Supabase"}), 500
-
     try:
         response = supabase.table("Doctores").select("*").execute()
         doctores = response.data if response.data else []
@@ -607,6 +643,15 @@ def procesar_desde_supabase():
         cal_id = doc.get("calendar_id") or doc.get("email")
         if not cal_id:
             continue
+
+        if supabase:
+            try:
+                supabase.table("metricas_y_registros").insert({
+                    "calendar_id": cal_id,
+                    "estado_accion": "proceso_diario_iniciado"
+                }).execute()
+            except Exception as ex:
+                log(f"Error guardando registro en metricas_y_registros: {ex}")
 
         calendario = obtener_servicio_calendar_por_doctor(cal_id)
         if not calendario:
@@ -664,18 +709,18 @@ def procesar_desde_supabase():
         
         if supabase:
             try:
-                res_encuestas = supabase.table("Encuestas").select("*").eq("calendar_id", cal_id).execute()
-                registros = res_encuestas.data or []
+                res_metricas = supabase.table("metricas_y_registros").select("*").eq("calendar_id", cal_id).eq("estado_accion", "encuesta_calificacion").execute()
+                registros = res_metricas.data or []
                 calificaciones_ayer = [
                     r["calificacion"] for r in registros 
-                    if r.get("fecha", "").startswith(ayer_str)
+                    if r.get("fecha", "").startswith(ayer_str) and r.get("calificacion") is not None
                 ]
                 if calificaciones_ayer:
                     total_respuestas = len(calificaciones_ayer)
                     promedio = sum(calificaciones_ayer) / total_respuestas
                     promedio_str = f"{promedio:.1f} / 10"
             except Exception as ex:
-                log(f"Error calculando promedio de encuestas: {ex}")
+                log(f"Error calculando promedio de encuestas desde metricas_y_registros: {ex}")
 
         if tel_doc and total_respuestas > 0:
             mensaje_balance = (
@@ -982,17 +1027,15 @@ def procesar_webhook_asincrono(data):
                     doc_cal_id = doc.get("calendar_id")
                     wa_link = doc.get("wa_link") or doc.get("link") or ""
                     
-                    # Registrar la cita confirmada en Supabase para el Dashboard
+                    # NUEVO: Registro en la tabla de métricas y registros unificada
                     try:
-                        zona_mexico = pytz.timezone('America/Mexico_City')
-                        hoy_str = datetime.now(zona_mexico).date().isoformat()
-                        supabase.table('citas_procesadas').insert({
+                        supabase.table('metricas_y_registros').insert({
                             'calendar_id': doc_cal_id,
-                            'fecha': hoy_str,
-                            'estado': 'confirmada'
+                            'estado_accion': 'cita_confirmada',
+                            'confirmado': True
                         }).execute()
                     except Exception as e:
-                        log(f"Error guardando cita confirmada en Supabase: {e}")
+                        log(f"Error guardando métrica de confirmación en Supabase: {e}")
 
                     respuesta_texto = f"*¡Perfecto!* Se ha confirmado tu cita de hoy con {doc_nombre}. Dudas o aclaraciones, comunícate aquí: {wa_link}.\n*Nota: Recuerda prepararte para epoca de lluvias*\n *¡Que tenga un excelente día!*"
                     enviar_mensaje(telefono_cliente, "text", contenido=respuesta_texto)
@@ -1008,17 +1051,15 @@ def procesar_webhook_asincrono(data):
                     doc_cal_id = doc.get("calendar_id")
                     wa_link = doc.get("wa_link") or doc.get("link") or ""
 
-                    # Registrar la cita cancelada/reagendar en Supabase para el Dashboard
+                    # NUEVO: Registro en la tabla de métricas y registros unificada para cancelación/reagendar
                     try:
-                        zona_mexico = pytz.timezone('America/Mexico_City')
-                        hoy_str = datetime.now(zona_mexico).date().isoformat()
-                        supabase.table('citas_procesadas').insert({
+                        supabase.table('metricas_y_registros').insert({
                             'calendar_id': doc_cal_id,
-                            'fecha': hoy_str,
-                            'estado': 'reagendar'
+                            'estado_accion': 'cita_cancelada',
+                            'confirmado': False
                         }).execute()
                     except Exception as e:
-                        log(f"Error guardando cita cancelada en Supabase: {e}")
+                        log(f"Error guardando métrica de cancelación en Supabase: {e}")
 
                     respuesta_texto = f"*Se ha cancelado tu cita.* Para reagendar, por favor comunícate con *{doc_nombre}*.\n *Da clic en el link de Whatsapp* aquí: {wa_link} con gusto atenderemos tu solicitud.\n *¡Que tenga un excelente día!*"
                     enviar_mensaje(telefono_cliente, "text", contenido=respuesta_texto)
