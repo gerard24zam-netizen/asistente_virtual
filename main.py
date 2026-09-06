@@ -1137,6 +1137,9 @@ def procesar_webhook_asincrono(data):
 
                     enviar_mensaje(telefono_cliente, "text", contenido="¡Muchas gracias por tu retroalimentación! La hemos registrado con éxito.")
                     return
+        except Exception as e:
+            log(f"Error general en procesar_webhook_asincrono: {e}")
+
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
     if request.method == 'GET':
