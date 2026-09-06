@@ -896,6 +896,45 @@ def marcar_evento_calendario(telefono_recibido, accion):
             log(f"Error actualizando calendario {cal_id}: {e}")
     return None, None
 
+def buscar_doctor_y_paciente_por_telefono(telefono_recibido):
+    tel_buscado = limpiar_telefono(telefono_recibido)
+    if not supabase:
+        return None, None
+    
+    try:
+        response = supabase.table("Doctores").select("*").execute()
+        doctores = response.data if response.data else []
+    except:
+        doctores = []
+
+    zona_mexico = pytz.timezone('America/Mexico_City')
+    ahora_mexico = datetime.now(zona_mexico)
+    inicio = ahora_mexico.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
+    fin = ahora_mexico.replace(hour=23, minute=59, second=59, microsecond=0).astimezone(pytz.utc).isoformat().replace('+00:00', 'Z')
+
+    for doc in doctores:
+        cal_id = doc.get("calendar_id") or doc.get("email")
+        if not cal_id:
+            continue
+        
+        calendario = obtener_servicio_calendar_por_doctor(cal_id)
+        if not calendario:
+            continue
+
+        try:
+            eventos_result = calendario.events().list(calendarId=cal_id, timeMin=inicio, timeMax=fin, singleEvents=True).execute()
+            for evento in eventos_result.get('items', []):
+                titulo = evento.get('summary', '')
+                descripcion = evento.get('description', '')
+                texto_completo = f"{titulo} {descripcion}"
+                
+                if tel_buscado in limpiar_telefono(texto_completo):
+                    nombre_paciente = extraer_nombre_limpio(titulo)
+                    return doc, nombre_paciente
+        except Exception as e:
+            log(f"Error buscando doctor en calendario {cal_id}: {e}")
+    return None, None
+
 def procesar_webhook_asincrono(data):
     try:
         val = data['entry'][0]['changes'][0]['value']
@@ -1067,38 +1106,37 @@ def procesar_webhook_asincrono(data):
                     tel_doc = "".join(filter(str.isdigit, str(wa_link)))
                     if tel_doc:
                         enviar_mensaje(tel_doc, "text", contenido=f"❌ El paciente *{nombre_paciente}* indicó que necesita reagendar su cita de hoy.\n *IMPORTANTE* comunicate con él, para que no pierda su cita.")
-                # Detectar si el mensaje es una calificación del 1 al 10 para las encuestas
+            
+            elif not doc_encontrado:
                 match_cal = re.search(r'\b([1-9]|10)\b', texto)
-                if match_cal and not doc_encontrado:
+                if match_cal:
                     calificacion = int(match_cal.group(1))
-                
-                # Buscar a qué doctor pertenece este paciente para obtener su calendar_id
-                # (Puedes apoyarte de tu función existente para ubicar el evento o doctor por teléfono)
-                doc, nombre_paciente = marcar_evento_calendario(telefono_cliente, 'consultar') # O la función que utilices para rastrear al doctor del cliente
-                
-                if doc:
-                    doc_cal_id = doc.get("calendar_id")
-                    try:
-                        zona_mexico = pytz.timezone('America/Mexico_City')
-                        hoy_str = datetime.now(zona_mexico).date().isoformat()
-                        
-                        # Guardar la encuesta en Supabase
-                        supabase.table('encuestas').insert({
-                            'calendar_id': doc_cal_id,
-                            'calificacion': calificacion,
-                            'fecha': hoy_str
-                        }).execute()
-                        
-                        log(f"Encuesta registrada: {calificacion} para calendar_id: {doc_cal_id}")
-                    except Exception as e:
-                        log(f"Error guardando encuesta en Supabase: {e}")
-
-                enviar_mensaje(telefono_cliente, "text", contenido="¡Muchas gracias por tu retroalimentación! La hemos registrado con éxito.")
-                return
+                    doc, nombre_paciente = buscar_doctor_y_paciente_por_telefono(telefono_cliente)
                     
-    except Exception as e:
-        log(f"Error procesando webhook asíncrono: {e}")
+                    if doc:
+                        doc_cal_id = doc.get("calendar_id")
+                        try:
+                            zona_mexico = pytz.timezone('America/Mexico_City')
+                            hoy_str = datetime.now(zona_mexico).date().isoformat()
+                            
+                            supabase.table('encuestas').insert({
+                                'calendar_id': doc_cal_id,
+                                'calificacion': calificacion,
+                                'fecha': hoy_str
+                            }).execute()
+                            
+                            supabase.table('metricas_y_registros').insert({
+                                'calendar_id': doc_cal_id,
+                                'estado_accion': 'encuesta_calificacion',
+                                'calificacion': calificacion
+                            }).execute()
+                            
+                            log(f"Encuesta registrada: {calificacion} para calendar_id: {doc_cal_id}")
+                        except Exception as e:
+                            log(f"Error guardando encuesta en Supabase: {e}")
 
+                    enviar_mensaje(telefono_cliente, "text", contenido="¡Muchas gracias por tu retroalimentación! La hemos registrado con éxito.")
+                    return
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
     if request.method == 'GET':
